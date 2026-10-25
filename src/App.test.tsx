@@ -7,6 +7,9 @@ import App from './App'
 const fetchMock = vi.fn()
 let canvasFixtures: Array<Record<string, unknown>> = []
 let startPageFixture = 'notes'
+let studentSettingsFixture: Record<string, string | number | boolean> = {}
+let settingsSaveFails = false
+let chatDeleteFails = false
 let createdAgentNote = false
 let coachReplyCount = 0
 let coachReplyFixture: string | ((init?: RequestInit) => string) | null = null
@@ -21,6 +24,9 @@ describe('Lumi React workspace shell', () => {
     window.history.replaceState({}, '', '/')
     canvasFixtures = []
     startPageFixture = 'notes'
+    studentSettingsFixture = { displayName: 'Ananya', studentClass: 'Class 10', schoolName: 'Sample School', studentProfileCompleted: true }
+    settingsSaveFails = false
+    chatDeleteFails = false
     createdAgentNote = false
     coachReplyCount = 0
     coachReplyFixture = null
@@ -50,8 +56,14 @@ describe('Lumi React workspace shell', () => {
         return Promise.resolve(new Response(JSON.stringify(created), { status: 201 }))
       }
       if (request.pathname === '/api/canvases') return Promise.resolve(new Response(JSON.stringify(canvasFixtures)))
-      if (request.pathname === '/api/application-settings' && init?.method === 'PUT') return Promise.resolve(new Response(init.body))
-      if (request.pathname === '/api/application-settings') return Promise.resolve(new Response(JSON.stringify({ workspaceName: 'My workspace', startPage: startPageFixture, theme: 'light', canvasPattern: 'dots', reduceMotion: false, teachingStyle: 'balanced', difficulty: 'adaptive', coachContext: true })))
+      if (request.pathname === '/api/assistant/getSnapshot' && JSON.parse(String(init?.body)).data.sessionId === 'saved-chat') return Promise.resolve(new Response(JSON.stringify({ state: { messages: [{ role: 'model', content: [{ text: 'Earlier explanation' }] }] } })))
+      if (request.pathname.startsWith('/api/agent-sessions/') && init?.method === 'DELETE') return Promise.resolve(new Response(JSON.stringify(chatDeleteFails ? { error: 'Delete failed' } : { deleted: true }), { status: chatDeleteFails ? 500 : 200 }))
+      if (request.pathname === '/api/application-settings' && init?.method === 'PUT') {
+        if (settingsSaveFails) return Promise.resolve(new Response(JSON.stringify({ error: 'Save failed' }), { status: 500 }))
+        studentSettingsFixture = { ...studentSettingsFixture, ...JSON.parse(String(init.body)) }
+        return Promise.resolve(new Response(JSON.stringify({ workspaceName: 'My workspace', ...studentSettingsFixture })))
+      }
+      if (request.pathname === '/api/application-settings') return Promise.resolve(new Response(JSON.stringify({ workspaceName: 'My workspace', startPage: startPageFixture, theme: 'light', canvasPattern: 'dots', reduceMotion: false, teachingStyle: 'balanced', difficulty: 'adaptive', coachContext: true, ...studentSettingsFixture })))
       if (request.pathname === '/api/profile/preferences' && init?.method === 'POST') {
         const preference = JSON.parse(String(init.body)).preference
         if (preference.startsWith('Use ')) return Promise.resolve(new Response(JSON.stringify({ error: 'Save only a clear learning or communication preference.' }), { status: 400 }))
@@ -117,6 +129,148 @@ describe('Lumi React workspace shell', () => {
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()
+  })
+
+  it('collects and persists student details on first launch and skips setup after reopening', async () => {
+    studentSettingsFixture = {}
+    const user = userEvent.setup()
+    const app = renderApp()
+    expect(await screen.findByRole('heading', { name: 'Welcome to Lumi.' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open Coach Agent' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start learning' })).toBeDisabled()
+    await user.type(screen.getByLabelText('Name'), '  Mira  ')
+    await user.type(screen.getByLabelText('Class'), 'Class 9')
+    await user.type(screen.getByLabelText('School name'), 'Sample School')
+    await user.click(screen.getByRole('button', { name: 'Start learning' }))
+    await screen.findByLabelText('Note title')
+    expect(studentSettingsFixture).toMatchObject({ displayName: 'Mira', studentClass: 'Class 9', schoolName: 'Sample School', studentProfileCompleted: true })
+    app.unmount()
+    renderApp()
+    await screen.findByLabelText('Note title')
+    expect(screen.queryByRole('heading', { name: 'Welcome to Lumi.' })).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Open Coach Agent' }))
+    expect(screen.getByRole('heading', { name: 'Hello, Mira.' })).toBeInTheDocument()
+  })
+
+  it('keeps entered student details after a failed save and supports retry', async () => {
+    studentSettingsFixture = {}
+    settingsSaveFails = true
+    const user = userEvent.setup()
+    renderApp()
+    await user.type(await screen.findByLabelText('Name'), 'Mira')
+    await user.type(screen.getByLabelText('Class'), '9')
+    await user.type(screen.getByLabelText('School name'), 'Sample School')
+    await user.click(screen.getByRole('button', { name: 'Start learning' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(screen.getByLabelText('Name')).toHaveValue('Mira')
+    expect(screen.queryByLabelText('Note title')).not.toBeInTheDocument()
+    settingsSaveFails = false
+    await user.click(screen.getByRole('button', { name: 'Start learning' }))
+    await screen.findByLabelText('Note title')
+  })
+
+  it('edits the student profile through General settings', async () => {
+    const user = userEvent.setup()
+    renderApp()
+    await screen.findByLabelText('Note title')
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    const name = await screen.findByLabelText('Name')
+    await user.clear(name)
+    expect(screen.getByRole('button', { name: 'Save preferences' })).toBeDisabled()
+    await user.type(name, 'Mira')
+    await user.clear(screen.getByLabelText('Class'))
+    await user.type(screen.getByLabelText('Class'), 'Class 9')
+    await user.click(screen.getByRole('button', { name: 'Save preferences' }))
+    await screen.findByText('Preferences saved.')
+    await user.click(await screen.findByRole('button', { name: 'Open Coach Agent' }))
+    expect(screen.getByRole('heading', { name: 'Hello, Mira.' })).toBeInTheDocument()
+  })
+
+  it('starts a fresh chat with profile context and keeps student prompts free of profile data', async () => {
+    const user = userEvent.setup()
+    renderApp()
+    await screen.findByLabelText('Note title')
+    await user.click(await screen.findByRole('button', { name: 'Open Coach Agent' }))
+    await user.type(screen.getByLabelText('Message the Coach'), 'Explain gravity')
+    await user.click(screen.getByRole('button', { name: 'Send message' }))
+    await screen.findByText('Ready 1')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'New Chat' })).toBeEnabled())
+    const group = screen.getByText('You', { selector: '.coach-speaker' })
+    expect(group.parentElement?.querySelector('.coach-message')?.contains(group)).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Delete saved conversation' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'New Chat' }))
+    expect(screen.queryByText('Ready 1')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Hello, Ananya.' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Message the Coach'), 'Explain light')
+    await user.click(screen.getByRole('button', { name: 'Send message' }))
+    await screen.findByText('Ready 2')
+    const calls = fetchMock.mock.calls.filter(([url, init]) => (url as URL).pathname === '/api/assistant' && init?.method === 'POST')
+    expect(calls).toHaveLength(2)
+    for (const [, init] of calls) {
+      const body = JSON.parse(String(init.body))
+      expect(body.init).toEqual({})
+      expect(body.data.message.content[0].text).toContain('"name":"Ananya"')
+      expect(body.data.message.content[0].text).toContain('"studentClass":"Class 10"')
+      expect(body.data.message.content[0].text).toContain('Address the student naturally by their name')
+      expect(body.data.message.metadata.lumi.studentPrompt).not.toContain('Ananya')
+    }
+  })
+
+  it('opens Recent chat options by right click and keyboard; cancels or deletes the selected saved conversation', async () => {
+    localStorage.setItem('lumi.chat.recent', JSON.stringify([{ agentPath: '/api/assistant', sessionId: 'saved-chat', title: 'Gravity review' }]))
+    localStorage.setItem('lumi.chat.session./api/assistant', 'saved-chat')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    try {
+      const user = userEvent.setup()
+      renderApp()
+      const row = await screen.findByRole('button', { name: 'Gravity review' })
+      fireEvent.contextMenu(row, { clientX: 40, clientY: 200 })
+      expect(screen.getByRole('menu', { name: 'Options for Gravity review' })).toBeInTheDocument()
+      await user.click(screen.getByRole('menuitem', { name: 'Delete chat' }))
+      expect(screen.getByRole('button', { name: 'Gravity review' })).toBeInTheDocument()
+      expect(fetchMock.mock.calls.some(([url, init]) => (url as URL).pathname.includes('/api/agent-sessions/') && init?.method === 'DELETE')).toBe(false)
+      row.focus()
+      fireEvent.keyDown(row, { key: 'F10', shiftKey: true })
+      expect(screen.getByRole('menuitem', { name: 'Open chat' })).toHaveFocus()
+      await user.keyboard('{Escape}')
+      expect(row).toHaveFocus()
+      await user.click(screen.getByRole('button', { name: 'Options for Gravity review' }))
+      await user.click(screen.getByRole('menuitem', { name: 'Delete chat' }))
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Gravity review' })).not.toBeInTheDocument())
+      expect(fetchMock).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/api/agent-sessions/saved-chat' }), expect.objectContaining({ method: 'DELETE' }))
+      expect(localStorage.getItem('lumi.chat.session./api/assistant')).toBeNull()
+      expect(JSON.parse(localStorage.getItem('lumi.chat.recent')!)).toEqual([])
+    } finally { confirm.mockRestore() }
+  })
+
+  it('keeps New Chat fresh after opening a saved chat and closing/reopening Coach', async () => {
+    localStorage.setItem('lumi.chat.recent', JSON.stringify([{ agentPath: '/api/assistant', sessionId: 'saved-chat', title: 'Gravity review' }]))
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Gravity review' }))
+    await screen.findByText('Earlier explanation')
+    await user.click(screen.getByRole('button', { name: 'New Chat' }))
+    await user.click(screen.getByRole('button', { name: 'Close Coach' }))
+    await user.click(screen.getByRole('button', { name: 'Open Coach Agent' }))
+    expect(screen.queryByText('Earlier explanation')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Hello, Ananya.' })).toBeInTheDocument()
+    expect(localStorage.getItem('lumi.chat.session./api/assistant')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Gravity review' })).toBeInTheDocument()
+  })
+
+  it('keeps a saved chat when deletion fails', async () => {
+    localStorage.setItem('lumi.chat.recent', JSON.stringify([{ agentPath: '/api/assistant', sessionId: 'saved-chat', title: 'Gravity review' }]))
+    chatDeleteFails = true
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    try {
+      const user = userEvent.setup()
+      renderApp()
+      await user.click(await screen.findByRole('button', { name: 'Options for Gravity review' }))
+      await user.click(screen.getByRole('menuitem', { name: 'Delete chat' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Could not delete this chat')
+      expect(screen.getByRole('button', { name: 'Gravity review' })).toBeInTheDocument()
+      expect(JSON.parse(localStorage.getItem('lumi.chat.recent')!)).toHaveLength(1)
+    } finally { confirm.mockRestore() }
   })
 
   it('opens the saved start page but yields to explicit navigation', async () => {
@@ -206,12 +360,12 @@ describe('Lumi React workspace shell', () => {
     const user = userEvent.setup()
     renderApp()
     await screen.findByLabelText('Note title')
-    await user.click(screen.getByRole('button', { name: 'Open Coach Agent' }))
-    expect(screen.getByRole('heading', { name: 'Study “Learning the senses”' })).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Open Coach Agent' }))
+    expect(screen.getByRole('heading', { name: 'Hello, Ananya.' })).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Choose Coach agent' })).not.toBeInTheDocument()
     expect(screen.getByText('Lumi automatically routes each request to the right specialist.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Close Coach Agent' }))
-    expect(screen.queryByRole('heading', { name: 'Study “Learning the senses”' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Hello, Ananya.' })).not.toBeInTheDocument()
   })
 
   it('ignores malformed or unknown Coach session metadata in browser storage', async () => {
@@ -223,7 +377,7 @@ describe('Lumi React workspace shell', () => {
     const user = userEvent.setup()
     renderApp()
     await screen.findByLabelText('Note title')
-    await user.click(screen.getByRole('button', { name: 'Open Coach Agent' }))
+    await user.click(await screen.findByRole('button', { name: 'Open Coach Agent' }))
     expect(screen.queryByRole('combobox', { name: 'Choose Coach agent' })).not.toBeInTheDocument()
     expect(screen.getByText('Lumi automatically routes each request to the right specialist.')).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Recent conversations' })).not.toBeInTheDocument()
@@ -233,7 +387,7 @@ describe('Lumi React workspace shell', () => {
     const user = userEvent.setup()
     renderApp()
     await screen.findByLabelText('Note title')
-    await user.click(screen.getByRole('button', { name: 'Open Coach Agent' }))
+    await user.click(await screen.findByRole('button', { name: 'Open Coach Agent' }))
     const message = screen.getByLabelText('Message the Coach')
     await user.type(message, 'Please make a quiz and review my progress.')
     await user.click(screen.getByRole('button', { name: 'Send message' }))
@@ -251,7 +405,7 @@ describe('Lumi React workspace shell', () => {
     const user = userEvent.setup()
     const { container } = renderApp()
     await screen.findByLabelText('Note title')
-    await user.click(screen.getByRole('button', { name: 'Open Coach Agent' }))
+    await user.click(await screen.findByRole('button', { name: 'Open Coach Agent' }))
     await user.type(screen.getByLabelText('Message the Coach'), 'How can I remember slope rules?')
     await user.click(screen.getByRole('button', { name: 'Send message' }))
 
@@ -504,7 +658,7 @@ $$` } })
     Object.defineProperty(document.documentElement, 'requestFullscreen', { configurable: true, value: requestFullscreen })
     try {
       const app = renderApp()
-      await user.click(screen.getByRole('button', { name: 'Focus mode' }))
+      await user.click(await screen.findByRole('button', { name: 'Focus mode' }))
       expect(window.location.pathname).toBe('/focus')
       await user.click(screen.getByRole('button', { name: /Quiet night/ }))
       await user.click(screen.getByRole('button', { name: 'Create Timer' }))
@@ -541,7 +695,7 @@ $$` } })
       expect(screen.queryByRole('button', { name: 'Switch off timer' })).not.toBeInTheDocument()
       app.unmount()
       renderApp()
-      await user.click(screen.getByRole('button', { name: 'Manage' }))
+      await user.click(await screen.findByRole('button', { name: 'Manage' }))
       expect(screen.getByRole('timer')).toHaveTextContent('50:00')
       expect(screen.getByText('Taking a breath')).toBeInTheDocument()
       await user.click(screen.getByRole('button', { name: 'Resume timer' }))
@@ -564,7 +718,7 @@ $$` } })
       return 'Let us focus.\n```lumi-focus\n' + JSON.stringify({ requestId, action: 'start', minutes: 25, label: 'Biology', theme: 'sand' }) + '\n```'
     }
     renderApp()
-    await user.click(screen.getByRole('button', { name: 'Open Coach Agent' }))
+    await user.click(await screen.findByRole('button', { name: 'Open Coach Agent' }))
     await user.type(screen.getByLabelText('Message the Coach'), 'Start a 25 minute focus timer for biology')
     await user.click(screen.getByRole('button', { name: 'Send message' }))
     await screen.findByText(/Focus timer started for 25 minutes/)
@@ -621,16 +775,50 @@ $$` } })
     }
   })
 
+  it.each([false, true])('opens an agent-created canvas, including when supporting notes are created: %s', async (withNotes) => {
+    coachReplyFixture = () => {
+      createdAgentNote = withNotes
+      canvasFixtures.push({ id: 'agent-canvas', title: 'Quantum study board', description: '', noteIds: withNotes ? ['agent-note'] : [], positions: {}, quizzes: [], updatedAt: '2026-10-25T00:00:00.000Z' })
+      return 'Your canvas is ready.'
+    }
+    const user = userEvent.setup()
+    renderApp()
+    await screen.findByLabelText('Note title')
+    await user.click(await screen.findByRole('button', { name: 'Open Coach Agent' }))
+    await user.type(screen.getByLabelText('Message the Coach'), 'Create a quantum study canvas')
+    await user.click(screen.getByRole('button', { name: 'Send message' }))
+    expect(await screen.findByLabelText('Quantum study board board')).toBeInTheDocument()
+    expect(window.location.pathname + window.location.search).toBe('/canvas?file=agent-canvas')
+    expect(screen.getByLabelText('Message the Coach')).toBeInTheDocument()
+    if (withNotes) expect(within(screen.getByLabelText('Quantum study board board')).getByText('Quantum Mechanics')).toBeInTheDocument()
+  })
+
+  it('keeps the current screen when the agent creates nothing', async () => {
+    window.history.replaceState({}, '', '/home')
+    coachReplyFixture = 'Here is an explanation.'
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Open Coach Agent' }))
+    await user.type(screen.getByLabelText('Message the Coach'), 'Explain quantum mechanics')
+    await user.click(screen.getByRole('button', { name: 'Send message' }))
+    await screen.findByText('Here is an explanation.')
+    await user.type(screen.getByLabelText('Message the Coach'), 'Next question')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled())
+    expect(window.location.pathname).toBe('/home')
+  })
+
   it('refreshes agent-created notes and resolves their Canvas cards without a page reload', async () => {
     canvasFixtures = [{ id: 'canvas-1', title: 'Existing study board', description: '', noteIds: ['agent-note'], positions: {}, quizzes: [], updatedAt: '2026-10-24T00:00:00.000Z' }]
     coachReplyFixture = () => { createdAgentNote = true; return 'Created your Quantum Mechanics note.' }
     const user = userEvent.setup()
     renderApp()
     await screen.findByLabelText('Note title')
-    await user.click(screen.getByRole('button', { name: 'Open Coach Agent' }))
+    await user.click(await screen.findByRole('button', { name: 'Open Coach Agent' }))
     await user.type(screen.getByLabelText('Message the Coach'), 'Create a note and write a brief para about Quantum Mechanics')
     await user.click(screen.getByRole('button', { name: 'Send message' }))
     await screen.findByText('Created your Quantum Mechanics note.')
+    await waitFor(() => expect(screen.getByLabelText('Note title')).toHaveValue('Quantum Mechanics'))
+    expect(window.location.search).toBe('?note=agent-note')
     await user.click(screen.getByRole('button', { name: 'Close Coach Agent' }))
     await user.click(screen.getByRole('button', { name: 'Canvas' }))
     await user.click(await screen.findByText('Existing study board'))

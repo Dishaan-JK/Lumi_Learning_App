@@ -1,5 +1,16 @@
 # Change Log
 
+## 2026-10-25
+
+- Replaced Coach's reload icon with a visible New Chat button and moved saved-chat deletion to a Recent chat context menu with keyboard and touch-accessible options.
+- Applied the approved chat design: sans-serif headings and messages, speaker labels outside message bubbles, and visible width slider rails for Chromium and Firefox.
+- Added a first-run student welcome form with persisted Name, Class, and School name, editable in General settings. Added validated fields to the sibling backend's existing application settings store.
+- Include the saved student profile in every Coach request and greet returning students by name. Keep original student prompts separate from profile/context metadata.
+- Open newly agent-created notes and Canvases in the main workspace after each completed turn, prioritizing a new Canvas when the turn also creates its supporting notes.
+- Renamed the folder-creation workspace-root option to Default path and select it automatically when no valid parent exists.
+
+- Verification: 51 React tests, 4 backend settings tests, production build, and isolated desktop/mobile Chrome flow passed. Browser screenshots use synthetic student data and model responses; live-provider wording was not evaluated.
+
 ## 2026-10-24
 
 - Removed the automatic Focus session-start notice; expiry still opens the completion dialog.

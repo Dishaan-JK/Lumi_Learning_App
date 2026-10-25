@@ -28,6 +28,47 @@ The Dart/Genkit service remains the source of truth for provider settings,
 agent tools, workspace persistence, and all credentials. React only calls its
 public HTTP endpoints through `/api`; no provider keys are exposed to Vite.
 
+## Student profile and chat controls
+
+The React client collects Name, Class, and School name before opening a workspace
+whose student profile has not been completed. The existing
+`GET/PUT /api/application-settings` contract persists `displayName`,
+`studentClass`, `schoolName`, and `studentProfileCompleted` in the local
+`application-settings.json`. Each text field allows up to 80 printable
+characters; a completed profile requires all three nonblank values. Existing
+settings default to an incomplete profile, so existing installations receive
+this welcome form once. Settings → General edits the same fields.
+
+Deploy the updated sibling Dart backend with this React client and restart an
+older backend process before saving the form. The client keeps the form and
+entered values on a failed save. Every new Coach request includes the saved
+student profile as context, while conversation metadata preserves the student's
+original prompt separately. A configured remote AI provider receives that
+context. A local greeting uses the saved name; a live model's wording depends on
+the provider and is separate from request-contract tests.
+
+New Chat starts a fresh session and retains earlier conversations in Recent.
+Right-click, Shift+F10, or the row's options button opens Open chat / Delete chat.
+Deletion asks for confirmation and calls the existing
+`DELETE /api/agent-sessions/:id`; the saved row is removed only after success.
+
+## Student and chat UI checks
+
+Run `npx vitest run` for component and request-contract coverage. For an isolated
+browser check with synthetic student data and mocked model responses, run:
+
+```bash
+npm run build
+npm run test:e2e:student-chat
+```
+
+This starts a disposable headless Chrome profile and a local fixture server;
+it never connects to the real backend or model provider. Desktop/mobile
+screenshots are saved in `/tmp/lumi-student-chat-proof` by default. Override
+`LUMI_CHROME_BINARY` or `LUMI_UI_PROOF_DIR` if needed. This proves the React flow,
+not a live model's choice of words. Backend persistence is covered by
+`./scripts/flutter test test/app_settings_test.dart` in the sibling project.
+
 ## Chrome end-to-end checks
 
 Run `npm run test:e2e:chrome` against a dedicated Chrome session started with

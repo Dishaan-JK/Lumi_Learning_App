@@ -8,7 +8,6 @@ import {
   Folder,
   Home,
   Menu,
-  MessageSquare,
   PanelRightClose,
   Plus,
   Pencil,
@@ -25,7 +24,11 @@ import { NoteEditor } from './features/notes/NoteEditor'
 import { SearchDialog } from './features/search/SearchDialog'
 import { ArtifactsLibrary } from './features/artifacts/ArtifactsLibrary'
 import { SettingsWorkspace } from './features/settings/SettingsWorkspace'
-import { CoachPanel, RECENT_CHATS_UPDATED_EVENT, readRecentChats, type RecentChat } from './features/coach/CoachPanel'
+import { CoachPanel } from './features/coach/CoachPanel'
+import { RECENT_CHATS_UPDATED_EVENT, readRecentChats, type RecentChat } from './features/coach/recent-chats'
+import { RecentChatRow } from './features/coach/RecentChatRow'
+import { StudentOnboarding } from './features/profile/StudentOnboarding'
+import { hasStudentProfile } from './features/profile/student-profile'
 import { HomeWorkspace } from './features/home/HomeWorkspace'
 import { useWorkspaceNavigation, type WorkspaceView } from './features/navigation/workspace-navigation'
 import { PanelWidthSlider } from './features/layout/PanelWidthSlider'
@@ -35,6 +38,7 @@ import { FocusWorkspace } from './features/focus/FocusWorkspace'
 import { FocusCompletionDialog } from './features/focus/FocusCompletionDialog'
 import { FocusWidget } from './features/focus/FocusWidget'
 import './App.css'
+import './features/coach/coach.css'
 
 type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'error'
 
@@ -173,6 +177,7 @@ function App() {
     [selectedNoteId, visibleNotes],
   )
   const allFolders = workspace.data?.folders ?? []
+  const folderCreationParentId = allFolders.some((folder) => folder.id === newFolderParentId) ? newFolderParentId : ''
   const childFolderIds = (parentId: string): Set<string> => {
     const result = new Set<string>()
     const visit = (id: string) => allFolders.filter((folder) => folder.parentId === id).forEach((folder) => { result.add(folder.id); visit(folder.id) })
@@ -211,6 +216,10 @@ function App() {
     setSearchOpen(false)
     setSearchQuery('')
   }
+
+  if (preferences.isPending) return <main className="student-welcome"><p role="status">Opening your workspace…</p></main>
+  if (preferences.isError) return <main className="student-welcome"><section className="student-welcome-content"><h1>Couldn’t load your profile.</h1><p role="alert">Check that the local Lumi service is running.</p><button type="button" onClick={() => void preferences.refetch()}>Try again</button></section></main>
+  if (!hasStudentProfile(preferences.data)) return <StudentOnboarding settings={preferences.data} />
 
   return (
     <div className={`app-shell ${focus.session ? 'has-focus-timer' : ''}`}>
@@ -273,7 +282,7 @@ function App() {
                 <Plus aria-hidden="true" />
               </button>
             </div>
-            {isCreatingFolder && <form className="folder-create-form" onSubmit={(event) => { event.preventDefault(); const name = newFolderName.trim(); if (name) createFolderMutation.mutate({ name, parentId: newFolderParentId || undefined }) }}><label className="sr-only" htmlFor="new-folder-name">New folder name</label><input id="new-folder-name" value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} placeholder="Folder name" autoFocus /><label className="sr-only" htmlFor="new-folder-parent">Parent folder</label><select id="new-folder-parent" value={newFolderParentId} onChange={(event) => setNewFolderParentId(event.target.value)}><option value="">At workspace root</option>{allFolders.map((folder) => <option key={folder.id} value={folder.id}>Inside {folder.name}</option>)}</select><button type="submit" disabled={!newFolderName.trim() || createFolderMutation.isPending}>Add</button></form>}
+            {isCreatingFolder && <form className="folder-create-form" onSubmit={(event) => { event.preventDefault(); const name = newFolderName.trim(); if (name) createFolderMutation.mutate({ name, parentId: folderCreationParentId || undefined }) }}><label className="sr-only" htmlFor="new-folder-name">New folder name</label><input id="new-folder-name" value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} placeholder="Folder name" autoFocus /><label className="sr-only" htmlFor="new-folder-parent">Parent folder</label><select id="new-folder-parent" value={folderCreationParentId} onChange={(event) => setNewFolderParentId(event.target.value)}><option value="">Default path</option>{allFolders.map((folder) => <option key={folder.id} value={folder.id}>Inside {folder.name}</option>)}</select><button type="submit" disabled={!newFolderName.trim() || createFolderMutation.isPending}>Add</button></form>}
             {workspace.data?.folders.length ? (
               <div className="folder-tree">{allFolders.filter((folder) => !folder.parentId || !allFolders.some((candidate) => candidate.id === folder.parentId)).map((folder) => renderFolder(folder))}</div>
             ) : (
@@ -287,9 +296,7 @@ function App() {
               [...recentChats]
                 .sort((a, b) => recentChatTime(b) - recentChatTime(a))
                 .slice(0, Math.min(20, Math.max(1, Number(preferences.data?.recentLimit ?? 12))))
-                .map((chat) => <button className={`note-row ${isCoachOpen && coachSessionRequest?.sessionId === chat.sessionId ? 'is-selected' : ''}`} type="button" key={chat.sessionId} onClick={() => { setCoachSessionRequest((current) => ({ sessionId: chat.sessionId, request: (current?.request ?? 0) + 1 })); setCoachOpen(true); setNavigationOpen(false) }}>
-                  <MessageSquare aria-hidden="true" /><span>{chat.title}</span>
-                </button>)
+                .map((chat) => <RecentChatRow key={chat.sessionId} chat={chat} selected={isCoachOpen && coachSessionRequest?.sessionId === chat.sessionId} onOpen={() => { setCoachSessionRequest((current) => ({ sessionId: chat.sessionId, request: (current?.request ?? 0) + 1 })); setCoachOpen(true); setNavigationOpen(false) }} onDeleted={() => setCoachSessionRequest((current) => current?.sessionId === chat.sessionId ? null : current)} />)
             ) : (
               <p className="nav-empty">Your recent Coach chats will appear here.</p>
             )}
@@ -331,7 +338,7 @@ function App() {
           <span>Coach Agent</span>
         </button>
       </aside>
-      {isCoachOpen && <CoachPanel note={view === 'canvas' && route.fileId ? undefined : selectedNote} canvas={view === 'canvas' ? selectedCanvas : undefined} notes={workspace.data?.notes ?? []} openSessionId={coachSessionRequest?.sessionId} openSessionRequest={coachSessionRequest?.request} onStartFocus={(action) => {
+      {isCoachOpen && <CoachPanel onNewChat={() => setCoachSessionRequest(null)} settings={preferences.data} note={view === 'notes' ? selectedNote : undefined} canvas={view === 'canvas' ? selectedCanvas : undefined} notes={workspace.data?.notes ?? []} openSessionId={coachSessionRequest?.sessionId} openSessionRequest={coachSessionRequest?.request} onOpenNote={(note) => { navigate('notes', { noteId: note.id, folderId: note.folderId ?? null }); setSaveStatus('saved') }} onOpenCanvas={(canvas) => navigate('canvas', { fileId: canvas.id })} onStartFocus={(action) => {
         const started = focus.start(action.minutes, action.label)
         if (started) {
           if (action.theme) focus.setTheme(action.theme)

@@ -1,0 +1,73 @@
+# Page dependency trees
+## src/App.tsx
+- src/App.tsx
+  - src/lib/lumi-api.ts
+    - src/lib/coach-messages.ts
+  - src/features/canvas/CanvasWorkspace.tsx
+    - src/lib/lumi-api.ts (already listed)
+  - src/features/graph/GraphWorkspace.tsx
+    - src/lib/lumi-api.ts (already listed)
+  - src/features/notes/NoteEditor.tsx
+    - src/lib/lumi-api.ts (already listed)
+    - src/lib/lumi-api.ts (already listed)
+    - src/features/notes/MarkdownPreview.tsx
+      - src/lib/lumi-api.ts (already listed)
+  - src/features/search/SearchDialog.tsx
+    - src/lib/lumi-api.ts (already listed)
+    - src/lib/format.ts
+      - src/lib/lumi-api.ts (already listed)
+  - src/features/artifacts/ArtifactsLibrary.tsx
+    - src/lib/lumi-api.ts (already listed)
+  - src/features/settings/SettingsWorkspace.tsx
+    - src/lib/lumi-api.ts (already listed)
+    - src/features/navigation/workspace-navigation.ts
+  - src/features/coach/CoachPanel.tsx
+    - src/lib/lumi-api.ts (already listed)
+    - src/features/notes/MarkdownPreview.tsx (already listed)
+    - src/features/focus/focus-agent-action.ts
+      - src/features/focus/focus-session.ts
+    - src/features/layout/PanelWidthSlider.tsx
+      - src/lib/layout-widths.ts
+  - src/features/home/HomeWorkspace.tsx
+    - src/lib/format.ts (already listed)
+    - src/lib/lumi-api.ts (already listed)
+  - src/features/navigation/workspace-navigation.ts (already listed)
+  - src/features/layout/PanelWidthSlider.tsx (already listed)
+  - src/lib/layout-widths.ts (already listed)
+  - src/features/focus/useFocusMode.ts
+    - src/features/focus/focus-session.ts (already listed)
+  - src/features/focus/FocusWorkspace.tsx
+    - src/features/focus/focus-session.ts (already listed)
+    - src/features/focus/useFocusMode.ts (already listed)
+    - src/features/focus/focus.css
+  - src/features/focus/FocusCompletionDialog.tsx
+    - src/features/focus/focus.css (already listed)
+  - src/features/focus/FocusWidget.tsx
+    - src/features/focus/focus-session.ts (already listed)
+    - src/features/focus/useFocusMode.ts (already listed)
+    - src/features/focus/focus.css (already listed)
+  - src/App.css
+  - src/features/navigation/workspace-navigation.ts (already listed)
+  - src/lib/lumi-api.ts (already listed)
+  - src/features/navigation/workspace-navigation.ts (already listed)
+## src/features/coach/CoachPanel.tsx
+- src/features/coach/CoachPanel.tsx
+  - src/lib/lumi-api.ts
+    - src/lib/coach-messages.ts
+  - src/features/notes/MarkdownPreview.tsx
+    - src/lib/lumi-api.ts (already listed)
+  - src/features/focus/focus-agent-action.ts
+    - src/features/focus/focus-session.ts
+  - src/features/layout/PanelWidthSlider.tsx
+    - src/lib/layout-widths.ts
+## src/features/home/HomeWorkspace.tsx
+- src/features/home/HomeWorkspace.tsx
+  - src/lib/format.ts
+    - src/lib/lumi-api.ts
+      - src/lib/coach-messages.ts
+  - src/lib/lumi-api.ts (already listed)
+## src/features/settings/SettingsWorkspace.tsx
+- src/features/settings/SettingsWorkspace.tsx
+  - src/lib/lumi-api.ts
+    - src/lib/coach-messages.ts
+  - src/features/navigation/workspace-navigation.ts

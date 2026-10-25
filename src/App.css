@@ -493,3 +493,14 @@ html[data-theme="dark"] .coach-compose textarea { color: #ece9e1; }
 html[data-theme="dark"] .coach-compose textarea::placeholder { color: #8f998c; }
 html[data-theme="dark"] .coach-error { background: #492f2a; color: #f0b7a8; }
 html[data-theme="dark"] .coach-loading { color: #aeb6aa; }
+
+/* Keep width-slider rails visible in Chromium and Firefox. */
+.panel-width-control { --width-track: #c9c5b9; --width-fill: #71836a; --width-edge: #fffcf5; }
+.panel-width-control input[type="range"] { display: block; height: 28px; border-radius: 14px; background: linear-gradient(to right, var(--width-fill) 0%, var(--width-fill) var(--panel-width-progress, 25%), var(--width-track) var(--panel-width-progress, 25%), var(--width-track) 100%) center / 100% 6px no-repeat; }
+.panel-width-control input[type="range"]::-webkit-slider-runnable-track { height: 6px; background: transparent; }
+.panel-width-control input[type="range"]::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: -7px; border-color: var(--width-edge); background: var(--width-fill); box-shadow: 0 0 0 1px var(--width-fill); }
+.panel-width-control input[type="range"]::-moz-range-track { height: 6px; background: transparent; }
+.panel-width-control input[type="range"]::-moz-range-progress { height: 6px; background: transparent; }
+.panel-width-control input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-color: var(--width-edge); background: var(--width-fill); box-shadow: 0 0 0 1px var(--width-fill); }
+html[data-theme="dark"] .panel-width-control { --width-track: #53604f; --width-fill: #a9c79d; --width-edge: #202520; }
+html[data-theme="dark"] .panel-width-control input[type="range"]::-webkit-slider-runnable-track, html[data-theme="dark"] .panel-width-control input[type="range"]::-moz-range-track { background: transparent; }

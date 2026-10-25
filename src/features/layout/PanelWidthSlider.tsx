@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { LAYOUT_WIDTHS_UPDATED_EVENT, readLayoutWidths, saveLayoutWidths, type LayoutWidths } from '../../lib/layout-widths'
 
 type ResizablePanel = keyof LayoutWidths
@@ -26,6 +26,6 @@ export function PanelWidthSlider({ panel, label }: { panel: ResizablePanel; labe
   return <label className={`panel-width-control panel-width-control--${panel}`} htmlFor={id}>
     <span>{label}</span>
     <output htmlFor={id}>{width} px</output>
-    <input id={id} type="range" aria-label={`${label} in pixels`} min={panelRanges[panel].min} max={panelRanges[panel].max} step={panelRanges[panel].step} value={width} onChange={(event) => updateWidth(Number(event.currentTarget.value))} />
+    <input id={id} type="range" aria-label={`${label} in pixels`} min={panelRanges[panel].min} max={panelRanges[panel].max} step={panelRanges[panel].step} value={width} style={{ '--panel-width-progress': `${(width - panelRanges[panel].min) / (panelRanges[panel].max - panelRanges[panel].min) * 100}%` } as CSSProperties} onChange={(event) => updateWidth(Number(event.currentTarget.value))} />
   </label>
 }

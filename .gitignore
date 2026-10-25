@@ -48,3 +48,5 @@ Thumbs.db
 *.sln
 *.sw?
 *.swo
+
+.superdesign/tmp/

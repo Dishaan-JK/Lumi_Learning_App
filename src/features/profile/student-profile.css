@@ -1,0 +1,22 @@
+.student-welcome { min-height: 100svh; display: grid; place-items: center; padding: 40px 20px; background: #f4f1e8; color: #292d28; }
+.student-welcome-content { width: min(100%, 440px); }
+.student-welcome header { margin-bottom: 28px; text-align: center; }
+.student-welcome header img { display: block; margin: 0 auto 22px; border-radius: 12px; }
+.student-welcome h1 { margin: 0 0 10px; font: 500 clamp(28px, 6vw, 36px)/1.2 "Lora", Georgia, serif; letter-spacing: -.025em; }
+.student-welcome header p { margin: 0; color: #62695f; font-size: 16px; }
+.student-profile-form { display: grid; gap: 20px; border: 1px solid #ded9cd; border-radius: 16px; background: #fffcf5; padding: 30px; }
+.student-profile-form label { display: grid; gap: 8px; color: #50584c; font-size: 13px; font-weight: 600; }
+.student-profile-form input { min-width: 0; width: 100%; min-height: 44px; border: 1px solid #cdc8bc; border-radius: 8px; background: #f8f5ed; padding: 0 12px; color: #292d28; font-size: 15px; }
+.student-profile-form input::placeholder { color: #757b70; }
+.student-profile-form input:focus-visible { outline: 2px solid #71836a; outline-offset: 2px; }
+.student-profile-form > p { margin: 0; color: #62695f; font-size: 13px; line-height: 1.6; }
+.student-profile-form > button { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 46px; border: 0; border-radius: 9px; background: #617457; color: #fffcf5; font-weight: 600; }
+.student-profile-form > button:disabled { opacity: .55; cursor: default; }
+.student-profile-form > .student-profile-error { color: #983e2b; }
+html[data-theme="dark"] .student-welcome { background: #191c19; color: #f0ede5; }
+html[data-theme="dark"] .student-welcome header p, html[data-theme="dark"] .student-profile-form > p { color: #c3cabe; }
+html[data-theme="dark"] .student-profile-form { border-color: #465047; background: #232923; }
+html[data-theme="dark"] .student-profile-form label { color: #dce5d6; }
+html[data-theme="dark"] .student-profile-form input { border-color: #566353; background: #1d241e; color: #f0ede5; }
+html[data-theme="dark"] .student-profile-form input::placeholder { color: #aeb7ab; }
+html[data-theme="dark"] .student-profile-form > .student-profile-error { color: #f0b7a8; }

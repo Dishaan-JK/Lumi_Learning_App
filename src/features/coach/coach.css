@@ -1,0 +1,40 @@
+.coach-drawer { font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif; }
+.coach-drawer .coach-agent-heading strong { font: 600 17px/1.2 "DM Sans", ui-sans-serif, system-ui, sans-serif; }
+.coach-drawer .coach-welcome h2 { font: 500 24px/1.3 "DM Sans", ui-sans-serif, system-ui, sans-serif; }
+.coach-new-chat { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; flex: 0 0 auto; border: 1px solid #d6d7ca; border-radius: 8px; background: transparent; padding: 0 9px; color: #4d6145; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.coach-new-chat svg { width: 14px; height: 14px; }
+.coach-new-chat:hover { background: #edf0e8; }
+.coach-new-chat:disabled { opacity: .5; cursor: default; }
+.coach-header .small-icon-button { width: 30px; height: 30px; flex: 0 0 auto; }
+.coach-message-group { display: flex; max-width: 92%; flex-direction: column; align-items: flex-start; gap: 7px; margin: 0 0 24px; }
+.coach-message-group.is-user { margin-left: auto; align-items: flex-end; }
+.coach-speaker { padding: 0 3px; color: #62695f; font-size: 12px; font-weight: 600; line-height: 1.4; }
+.coach-message-group .coach-message { width: fit-content; max-width: 100%; margin: 0; padding: 13px 15px; border-radius: 12px; }
+.coach-message-group .coach-message p, .coach-message-group .markdown-preview { margin: 0; color: #3f453d; font: 400 14px/1.65 "DM Sans", ui-sans-serif, system-ui, sans-serif; }
+.coach-message-group .markdown-preview h1, .coach-message-group .markdown-preview h2, .coach-message-group .markdown-preview h3 { font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif; font-weight: 600; }
+.coach-message-group .markdown-preview p + p { margin-top: 10px; }
+.coach-compose textarea { font: 14px/1.6 "DM Sans", ui-sans-serif, system-ui, sans-serif; }
+.recent-chat-row { position: relative; display: flex; flex-wrap: wrap; align-items: center; border-radius: 8px; }
+.recent-chat-row > .note-row { flex: 1; min-width: 0; width: auto; }
+.recent-chat-row.is-selected { background: rgba(113,131,106,.14); }
+.recent-chat-options { display: grid; width: 28px; height: 30px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 6px; background: transparent; color: #62695f; }
+.recent-chat-options:hover { background: rgba(41,45,40,.08); }
+.recent-chat-options svg { width: 16px; height: 16px; }
+.recent-chat-menu { position: fixed; z-index: 50; display: grid; width: 208px; gap: 2px; border: 1px solid #d9d4c9; border-radius: 10px; background: #fffcf5; padding: 5px; box-shadow: 0 12px 32px rgba(35,39,34,.16); }
+.recent-chat-menu button { display: flex; align-items: center; gap: 9px; min-height: 38px; border: 0; border-radius: 6px; background: transparent; padding: 0 10px; color: #3f453d; text-align: left; font-size: 13px; }
+.recent-chat-menu button:hover, .recent-chat-menu button:focus-visible { background: #edf0e8; }
+.recent-chat-menu svg { width: 15px; height: 15px; }
+.recent-chat-menu .chat-menu-delete { color: #983e2b; }
+.recent-chat-error { width: 100%; margin: 5px 10px; color: #983e2b; font-size: 12px; }
+html[data-theme="dark"] .coach-new-chat { border-color: #53634e; color: #dce9d5; }
+html[data-theme="dark"] .coach-new-chat:hover { background: #354334; }
+html[data-theme="dark"] .coach-speaker { color: #b8c4b2; }
+html[data-theme="dark"] .coach-message-group .coach-message p, html[data-theme="dark"] .coach-message-group .markdown-preview { color: #d5d9d1; }
+html[data-theme="dark"] .recent-chat-row.is-selected { background: #354334; }
+html[data-theme="dark"] .recent-chat-options { color: #c7cec3; }
+html[data-theme="dark"] .recent-chat-options:hover { background: #303830; }
+html[data-theme="dark"] .recent-chat-menu { border-color: #53604f; background: #232923; }
+html[data-theme="dark"] .recent-chat-menu button { color: #e9eee5; }
+html[data-theme="dark"] .recent-chat-menu button:hover, html[data-theme="dark"] .recent-chat-menu button:focus-visible { background: #354334; }
+html[data-theme="dark"] .recent-chat-menu .chat-menu-delete, html[data-theme="dark"] .recent-chat-error { color: #f0b7a8; }
+@media (max-width: 380px) { .coach-header { gap: 7px; padding-inline: 12px; }.coach-header .eyebrow { font-size: 9px; }.coach-new-chat { padding-inline: 6px; }.coach-new-chat svg { display: none; } }
