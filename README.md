@@ -1,10 +1,10 @@
 # Lumi Learning Workspace
 
 Lumi is a local learning workspace for collecting notes and turning them into
-study materials. This repository contains the React web interface. In the
-single-executable Linux build, the interface and Lumi's Dart/Genkit service are
-packaged together, so learners can use the app without installing Node.js, Dart,
-or this source repository.
+study materials. This repository contains the React web interface and the
+Dart/Genkit service it uses. Native single-file releases package both together,
+so learners do not need Node.js, React, TypeScript, Dart, or this source
+repository installed.
 
 ## What you can do
 
@@ -17,76 +17,56 @@ or this source repository.
   widths.
 
 The app runs its local service on loopback and stores workspace data on the
-computer where it runs. In the packaged app, data is saved under
-`$XDG_DATA_HOME/lumi`, or `~/.local/share/lumi` when `XDG_DATA_HOME` is not set.
-Set `LUMI_DATA_DIR` to use a different location. AI provider credentials are
-managed by the local service and are not put into the browser bundle.
+computer where it runs. Packaged data defaults to `%LOCALAPPDATA%\Lumi` on
+Windows, `~/Library/Application Support/Lumi` on macOS, and
+`$XDG_DATA_HOME/lumi` or `~/.local/share/lumi` on Linux. Set `LUMI_DATA_DIR` to
+use a different location. AI provider credentials are managed by the local
+service and are not put into the browser bundle.
 
-## Linux desktop support
+## Desktop support
 
-The available packaged executable targets **Linux x86_64** and requires **glibc
-2.39 or newer**. It is suitable for 64-bit Intel/AMD Linux systems whose installed
-glibc meets that requirement. The executable does not currently target ARM64,
-32-bit Linux, Windows, or macOS.
+Release builds target Windows x64, macOS Intel x64 and Apple Silicon arm64, and
+Linux x64 and arm64. Each release includes its own native service and local web
+server; users only need a modern web browser. The release workflow builds each
+target on its native GitHub Actions runner.
 
-The runtime preparation script recognizes these distro families:
-
-| Distro family | Examples |
-| --- | --- |
-| Debian based | Debian, Ubuntu, Linux Mint, Pop!_OS, Elementary OS, Zorin OS, Kali |
-| Fedora/RHEL based | Fedora, RHEL, CentOS, Rocky Linux, AlmaLinux |
-| Arch based | Arch Linux, Manjaro, EndeavourOS, Omarchy |
-| SUSE based | openSUSE |
-| Other supported package managers | Void Linux, Gentoo |
-
-These names indicate package-manager support, not that every release of each
-distro is compatible. Check the installed glibc version: older releases may
-fall below 2.39. The included helper checks this and can update glibc through
-the distro package manager where configured. If the distro repositories do not
-provide a new enough version, upgrade the distro to a compatible release.
-
-Alpine Linux uses musl instead of glibc and is not compatible with this build.
-Other distributions may work if they provide x86_64, glibc 2.39 or newer, and
-the shared libraries reported by `ldd`. On unsupported distributions, run the
-runtime check and install manually only if it passes.
+Linux builds use glibc 2.35 or newer and are intended for common glibc-based
+distributions, including Debian/Ubuntu, Fedora/RHEL, Arch, SUSE, Void, and
+Gentoo. Alpine and other musl-based systems are not supported by these builds.
+Local model download/management currently requires Linux; remote model providers
+work on all packaged desktop targets.
 
 ## Install and run the packaged app
 
-The repository does not currently publish a hosted download. Get the
-`lumi-linux-x64` executable and `prepare-linux-runtime.sh` from a Lumi release
-bundle or from whoever provided the build. On the target computer, open a
-terminal in the folder containing those files and:
+After the first GitHub release is published, install and launch Lumi with one
+command. On Linux or macOS:
 
-```bash
-chmod +x lumi-linux-x64 prepare-linux-runtime.sh
-LUMI_EXECUTABLE="$PWD/lumi-linux-x64" ./prepare-linux-runtime.sh
-./lumi-linux-x64
+```sh
+curl -fsSL https://github.com/Dishaan-JK/Lumi_Learning_App/releases/latest/download/install.sh | sh
 ```
 
-The helper may request administrator access to install or update runtime
-packages. It does not install a web browser; Lumi opens your default browser
-when possible and prints its local address in the terminal. If no browser opens,
-copy that address (usually `http://127.0.0.1:<port>/`) into a browser on the same
-computer. Keep the terminal open while using Lumi; press **Ctrl+C** there to
-stop it.
+In Windows PowerShell:
 
-The helper updates only the needed runtime package on most supported systems.
-Arch-family systems require a full synchronized `pacman -Syu` update because
-Arch does not support partial upgrades. Review package-manager output before
-proceeding. The helper will not attempt to upgrade the distribution itself.
+```powershell
+irm https://github.com/Dishaan-JK/Lumi_Learning_App/releases/latest/download/install.ps1 | iex
+```
+
+The installer downloads the matching native build into your user account and
+starts Lumi; administrator access is not required. The app opens your default
+browser and prints its local address. Keep the terminal open while using Lumi
+and press **Ctrl+C** there to stop the service. Set `LUMI_INSTALL_DIR` to choose
+a different install directory.
 
 ### Where your data lives
 
-By default, Lumi saves workspace data in:
+Set `LUMI_DATA_DIR` to select another location. For example, on Linux:
 
 ```text
 ~/.local/share/lumi
 ```
 
-To choose another directory for one launch:
-
 ```bash
-LUMI_DATA_DIR="$HOME/Documents/LumiData" ./lumi-linux-x64
+LUMI_DATA_DIR="$HOME/Documents/LumiData" "$HOME/.local/bin/lumi"
 ```
 
 Back up this directory before removing it. Deleting it removes the local Lumi
@@ -148,9 +128,9 @@ save the new connection. These controls follow Google's
 
 ## Run from source (developers)
 
-The web client requires Node.js and npm. The full local app also requires the
-sibling `Learning-App` checkout with its Dart/Genkit service configured. From
-this repository:
+Source development requires Node.js, npm, Dart 3.12 or newer, and Rust. The
+bundled backend is in this repository, so no sibling checkout is needed. From
+the repository root:
 
 ```bash
 npm ci
@@ -158,17 +138,17 @@ npm run dev:full
 ```
 
 See [BACKEND.md](BACKEND.md) for backend paths, ports, and local API setup. To
-build the Linux x86_64 single executable, install Rust and prepare the sibling
-backend checkout, then run:
+build a native single-file package for the current OS and CPU, also install
+Rust, then run:
 
 ```bash
 npm run bundle:single
 ```
 
-The build output is `release/lumi-linux-x64`. Build it on Linux x86_64; the
-current bundler does not cross-compile other operating systems or CPU
-architectures. For front-end-only development, use `npm run dev` with a Lumi
-backend already running at `http://127.0.0.1:8080`.
+The build output is named `release/lumi-<os>-<arch>`. The build is native to
+the current OS and architecture. GitHub Actions builds all supported release
+targets on their matching runners. For front-end-only development, use
+`npm run dev` with a Lumi backend already running at `http://127.0.0.1:8080`.
 
 ## Developer checks
 
@@ -241,7 +221,7 @@ exchanges and marked reasoning are excluded from the visible transcript. A
 completed Coach turn refreshes workspace queries so created note cards display
 the saved title and content immediately.
 
-The sibling Dart backend provides **createWorkspaceNote** for standalone notes,
+The bundled Dart service provides **createWorkspaceNote** for standalone notes,
 rejects empty agent-created note drafts, and checks the original Student prompt
-before allowing a new Canvas. Restart the backend after updating these server
-files; refreshing the React page alone does not reload Dart agent definitions.
+before allowing a new Canvas. Restart the local backend after updating these
+server files; refreshing the React page alone does not reload Dart agent definitions.

@@ -19,6 +19,8 @@ release/
 !.env.example
 !.env.*.example
 .data/
+backend/.dart_tool/
+backend/.packages
 
 # Tool caches and generated test output
 .vite/

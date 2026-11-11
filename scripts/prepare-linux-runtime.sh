@@ -1,21 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Prepare the host for release/lumi-linux-x64. This intentionally updates only
+# Prepare the host for a packaged Linux executable. This intentionally updates only
 # the runtime libraries/tools the app needs (never the entire system, except
 # Arch-family distros where partial upgrades are unsupported).
-APP="${LUMI_EXECUTABLE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/release/lumi-linux-x64}"
-MIN_GLIBC="2.39"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MIN_GLIBC="2.35"
 
 die() { printf 'Lumi setup: %s\n' "$*" >&2; exit 1; }
 say() { printf 'Lumi setup: %s\n' "$*"; }
 
-[[ -x "$APP" ]] || die "Executable not found: $APP (set LUMI_EXECUTABLE to its path)."
 command -v getconf >/dev/null || die "getconf is required to inspect the system C library."
 command -v ldd >/dev/null || die "ldd is required to inspect executable dependencies."
 
 arch="$(uname -m)"
-[[ "$arch" == x86_64 || "$arch" == amd64 ]] || die "This Lumi build targets x86_64; this machine reports $arch."
+case "$arch" in
+  x86_64|amd64) asset_arch=x64 ;;
+  aarch64|arm64) asset_arch=arm64 ;;
+  *) die "Lumi's Linux builds target x86_64 and arm64; this machine reports $arch." ;;
+esac
+APP="${LUMI_EXECUTABLE:-$ROOT/release/lumi-linux-$asset_arch}"
+[[ -x "$APP" ]] || die "Executable not found: $APP (set LUMI_EXECUTABLE to its path)."
 
 libc_line="$(getconf GNU_LIBC_VERSION 2>/dev/null || true)"
 current_glibc="${libc_line#glibc }"

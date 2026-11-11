@@ -1,7 +1,7 @@
 # Backend wiring
 
 The React app is served with a same-origin `/api` contract. During development,
-Vite proxies those requests to the existing Lumi Dart/Genkit service at
+Vite proxies those requests to the bundled Lumi Dart/Genkit service at
 `http://127.0.0.1:8080` by default.
 
 Run the complete local stack from this project:
@@ -11,9 +11,10 @@ npm run dev:full
 ```
 
 The launcher first checks whether the backend is already listening, so it does
-not start a duplicate process. If needed, it starts the Dart service from the
-sibling Lumi project. Override that location with `LUMI_BACKEND_ROOT`, and use
-`LUMI_BACKEND_URL` when the backend listens on another local address.
+not start a duplicate process. If needed, it prepares and starts the Dart service
+from this repository's `backend/` package. Set `LUMI_DART_EXECUTABLE` when the
+Dart SDK is not on `PATH`, and use `LUMI_BACKEND_URL` when the backend listens
+on another local address.
 Set `LUMI_FRONTEND_PORT` when an existing development server already uses 5173.
 Vite now binds strictly to that configured port instead of silently moving to a
 different port that the backend may reject. The full-stack launcher checks the
@@ -24,7 +25,7 @@ When the launcher starts the backend, it also sets a strict exact
 allowlist: the local API handles exports, imports, and deletions. If connecting
 to a separately started backend, configure its exact UI origin yourself.
 
-The Dart/Genkit service remains the source of truth for provider settings,
+The Dart/Genkit service is the source of truth for provider settings,
 agent tools, workspace persistence, and all credentials. React only calls its
 public HTTP endpoints through `/api`; no provider keys are exposed to Vite.
 
@@ -39,9 +40,8 @@ characters; a completed profile requires all three nonblank values. Existing
 settings default to an incomplete profile, so existing installations receive
 this welcome form once. Settings → General edits the same fields.
 
-Deploy the updated sibling Dart backend with this React client and restart an
-older backend process before saving the form. The client keeps the form and
-entered values on a failed save. Every new Coach request includes the saved
+The bundled service implements these settings and ships with this client. The
+client keeps the form and entered values on a failed save. Every new Coach request includes the saved
 student profile as context, while conversation metadata preserves the student's
 original prompt separately. A configured remote AI provider receives that
 context. A local greeting uses the saved name; a live model's wording depends on
@@ -66,8 +66,7 @@ This starts a disposable headless Chrome profile and a local fixture server;
 it never connects to the real backend or model provider. Desktop/mobile
 screenshots are saved in `/tmp/lumi-student-chat-proof` by default. Override
 `LUMI_CHROME_BINARY` or `LUMI_UI_PROOF_DIR` if needed. This proves the React flow,
-not a live model's choice of words. Backend persistence is covered by
-`./scripts/flutter test test/app_settings_test.dart` in the sibling project.
+not a live model's choice of words.
 
 ## Chrome end-to-end checks
 

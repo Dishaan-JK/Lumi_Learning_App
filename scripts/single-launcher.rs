@@ -9,8 +9,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 static STOP: AtomicBool = AtomicBool::new(false);
-extern "C" fn stop_signal(_: i32) { STOP.store(true, Ordering::SeqCst); }
-unsafe extern "C" { fn signal(sig: i32, handler: extern "C" fn(i32)) -> usize; }
+#[cfg(unix)] extern "C" fn stop_signal(_: i32) { STOP.store(true, Ordering::SeqCst); }
+#[cfg(unix)] unsafe extern "C" { fn signal(sig: i32, handler: extern "C" fn(i32)) -> usize; }
+#[cfg(windows)] extern "system" fn stop_signal(_: u32) -> i32 { STOP.store(true, Ordering::SeqCst); 1 }
+#[cfg(windows)] #[link(name = "Kernel32")]
+unsafe extern "system" { fn SetConsoleCtrlHandler(handler: Option<extern "system" fn(u32) -> i32>, add: i32) -> i32; }
 
 static BACKEND: &[u8] = include_bytes!(env!("LUMI_BACKEND_BINARY"));
 static ASSETS: &[(&str, &[u8])] = &[
@@ -18,19 +21,37 @@ static ASSETS: &[(&str, &[u8])] = &[
 ];
 
 fn home_dir() -> PathBuf {
-    env::var_os("HOME").map(PathBuf::from).unwrap_or_else(env::temp_dir)
+    #[cfg(windows)] let home = env::var_os("USERPROFILE");
+    #[cfg(not(windows))] let home = env::var_os("HOME");
+    home.map(PathBuf::from).unwrap_or_else(env::temp_dir)
 }
 fn data_dir() -> PathBuf {
-    env::var_os("LUMI_DATA_DIR").map(PathBuf::from).unwrap_or_else(|| {
-        env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home_dir().join(".local/share")).join("lumi")
-    })
+    if let Some(path) = env::var_os("LUMI_DATA_DIR") { return PathBuf::from(path); }
+    #[cfg(windows)] { return env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|| home_dir().join("AppData/Local")).join("Lumi"); }
+    #[cfg(target_os = "macos")] { return env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home_dir().join("Library/Application Support")).join("Lumi"); }
+    #[cfg(target_os = "linux")] { return env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home_dir().join(".local/share")).join("lumi"); }
 }
 fn cache_dir() -> PathBuf {
-    env::var_os("XDG_CACHE_HOME").map(PathBuf::from).unwrap_or_else(|| home_dir().join(".cache")).join("lumi-single")
+    #[cfg(windows)] { return env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|| home_dir().join("AppData/Local")).join("Lumi/cache"); }
+    #[cfg(target_os = "macos")] { return env::var_os("XDG_CACHE_HOME").map(PathBuf::from).unwrap_or_else(|| home_dir().join("Library/Caches")).join("Lumi"); }
+    #[cfg(target_os = "linux")] { return env::var_os("XDG_CACHE_HOME").map(PathBuf::from).unwrap_or_else(|| home_dir().join(".cache")).join("lumi-single"); }
 }
+#[cfg(unix)]
 fn protect_directory(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).expect("Could not protect Lumi's local files");
+}
+#[cfg(windows)] fn protect_directory(_: &Path) {}
+#[cfg(windows)] fn backend_file_name() -> &'static str { "lumi-backend.exe" }
+#[cfg(not(windows))] fn backend_file_name() -> &'static str { "lumi-backend" }
+fn open_browser(url: &str) {
+    #[cfg(target_os = "windows")]
+    let command = Command::new("rundll32.exe").args(["url.dll,FileProtocolHandler", url]).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    #[cfg(target_os = "macos")]
+    let command = Command::new("open").arg(url).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    #[cfg(target_os = "linux")]
+    let command = Command::new("xdg-open").arg(url).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    let _ = command;
 }
 fn port() -> u16 {
     let listener = TcpListener::bind(("127.0.0.1", 0)).expect("Could not reserve a local port");
@@ -133,15 +154,18 @@ fn serve(mut stream: TcpStream, backend_port: u16) {
     }
 }
 fn main() {
-    unsafe { signal(2, stop_signal); signal(15, stop_signal); }
+    #[cfg(unix)] unsafe { signal(2, stop_signal); signal(15, stop_signal); }
+    #[cfg(windows)] unsafe { SetConsoleCtrlHandler(Some(stop_signal), 1); }
     let cache = cache_dir();
     fs::create_dir_all(&cache).expect("Could not create Lumi runtime cache");
     protect_directory(&cache);
-    let backend_path = cache.join("lumi-backend");
+    let backend_path = cache.join(backend_file_name());
     if fs::read(&backend_path).map(|bytes| bytes.as_slice() != BACKEND).unwrap_or(true) {
         fs::write(&backend_path, BACKEND).expect("Could not unpack embedded Lumi backend");
+        #[cfg(unix)] {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&backend_path, fs::Permissions::from_mode(0o700)).expect("Could not mark backend executable");
+        }
     }
     let data = data_dir();
     fs::create_dir_all(&data).expect("Could not create Lumi data directory");
@@ -155,7 +179,7 @@ fn main() {
     println!("Lumi is ready at {url}");
     println!("Local data: {}", data.display());
     println!("Press Ctrl+C to stop Lumi.");
-    let _ = Command::new("xdg-open").arg(&url).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    open_browser(&url);
     while !STOP.load(Ordering::SeqCst) {
         match ui_listener.accept() {
             Ok((stream,_)) => { thread::spawn(move || serve(stream, backend_port)); }

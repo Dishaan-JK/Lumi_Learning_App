@@ -8,18 +8,31 @@ import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const backendRoot = resolve(root, '../Learning-App')
-const output = resolve(process.argv[2] ?? join(root, 'release/lumi-linux-x64'))
+const backendRoot = join(root, 'backend')
+const platform = ({ win32: 'windows', darwin: 'macos', linux: 'linux' })[process.platform]
+const arch = ({ x64: 'x64', arm64: 'arm64' })[process.arch]
+const binaryName = `lumi-${platform}-${arch}${process.platform === 'win32' ? '.exe' : ''}`
+const output = resolve(process.argv[2] ?? join(root, 'release', binaryName))
 const temp = await mkdtemp(join(tmpdir(), 'lumi-single-build-'))
 
-if (process.platform !== 'linux' || process.arch !== 'x64') {
-  throw new Error('This build script currently targets Linux x86_64. Build on another supported target with its native toolchain.')
+if (!platform || !arch) {
+  throw new Error(`Unsupported release target: ${process.platform}-${process.arch}. Supported targets are Windows, macOS, and Linux on x64 or arm64.`)
 }
 
 async function run(command, args, cwd, env = process.env) {
-  const { stdout, stderr } = await execFileAsync(command, args, { cwd, env, maxBuffer: 16 * 1024 * 1024 })
+  const { stdout, stderr } = await execFileAsync(command, args, { cwd, env, maxBuffer: 16 * 1024 * 1024, shell: process.platform === 'win32' })
   if (stdout.trim()) process.stdout.write(stdout)
   if (stderr.trim()) process.stderr.write(stderr)
+}
+async function runDart(dart, args, cwd, completedFile) {
+  const env = { ...process.env, DART_SUPPRESS_ANALYTICS: 'true' }
+  try {
+    await run(dart, args, cwd, env)
+  } catch (error) {
+    const diagnostic = String(error.stderr ?? error.message ?? error)
+    if (!existsSync(completedFile) || !diagnostic.includes('/.dart-tool/dart-flutter-telemetry.log')) throw error
+    process.stderr.write(`Dart completed ${args[0]}; its telemetry log cleanup was blocked by the read-only home directory. Continuing with the generated output.\n`)
+  }
 }
 async function listFiles(directory) {
   const out = []
@@ -34,18 +47,11 @@ async function listFiles(directory) {
 try {
   await mkdir(dirname(output), { recursive: true })
   await run('npm', ['run', 'build'], root)
-  const backendBinary = join(temp, 'lumi-backend')
-  try {
-    await run(join(backendRoot, 'scripts/dart'), ['compile', 'exe', '--packages=.dart_tool/package_config.json', 'bin/server.dart', '-o', backendBinary], backendRoot, {
-      ...process.env,
-      FLUTTER_SUPPRESS_ANALYTICS: 'true',
-      DART_SUPPRESS_ANALYTICS: 'true',
-    })
-  } catch (error) {
-    const diagnostic = String(error.stderr ?? error.message ?? error)
-    if (!existsSync(backendBinary) || !diagnostic.includes('/.dart-tool/dart-flutter-telemetry.log')) throw error
-    process.stderr.write('Dart generated the backend executable; its post-build analytics log cleanup was blocked by the read-only home directory. Continuing with the generated binary.\n')
-  }
+  const dart = process.env.LUMI_DART_EXECUTABLE ?? 'dart'
+  const pubGetArgs = ['pub', 'get', ...(process.env.LUMI_PUB_OFFLINE === '1' ? ['--offline'] : [])]
+  await runDart(dart, pubGetArgs, backendRoot, join(backendRoot, '.dart_tool/package_config.json'))
+  const backendBinary = join(temp, `lumi-backend${process.platform === 'win32' ? '.exe' : ''}`)
+  await runDart(dart, ['compile', 'exe', '--packages=.dart_tool/package_config.json', 'bin/server.dart', '-o', backendBinary], backendRoot, backendBinary)
 
   const assetEntries = (await listFiles(join(root, 'dist'))).map((path) => {
     const name = relative(join(root, 'dist'), path).split(sep).join('/')

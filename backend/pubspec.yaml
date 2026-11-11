@@ -1,0 +1,17 @@
+name: lumi_backend
+description: Lumi's standalone local web service.
+publish_to: none
+version: 1.0.0
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+
+dependencies:
+  genkit: ^1.0.0
+  genkit_anthropic: ^1.0.0
+  genkit_google_genai: ^1.0.0
+  genkit_openai: ^1.0.0
+  crypto: ^3.0.7
+  http: ^1.6.0
+  schemantic: ^1.0.0
+  web: ^1.1.1
