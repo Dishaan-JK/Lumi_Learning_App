@@ -38,24 +38,35 @@ work on all packaged desktop targets.
 
 ## Install and run the packaged app
 
-After the first GitHub release is published, install and launch Lumi with one
-command. On Linux or macOS:
+After a GitHub release is published, use the command for your operating system.
+
+### Linux
+
+In a terminal, run:
 
 ```sh
 curl -fsSL https://github.com/Dishaan-JK/Lumi_Learning_App/releases/latest/download/install.sh | sh
 ```
 
-In Windows PowerShell:
+The installer detects x64 or arm64, downloads the matching Linux build, and
+installs it to `~/.local/bin/lumi` before launching it. Lumi supports glibc
+distributions; Alpine Linux is not supported. You do not need to install React,
+TypeScript, Node.js, or Dart. macOS uses this same command with its matching
+release binary.
+
+### Windows
+
+Open PowerShell and run:
 
 ```powershell
 irm https://github.com/Dishaan-JK/Lumi_Learning_App/releases/latest/download/install.ps1 | iex
 ```
 
-The installer downloads the matching native build into your user account and
-starts Lumi; administrator access is not required. The app opens your default
-browser and prints its local address. Keep the terminal open while using Lumi
-and press **Ctrl+C** there to stop the service. Set `LUMI_INSTALL_DIR` to choose
-a different install directory.
+The installer downloads the Windows x64 build to
+`%LOCALAPPDATA%\Programs\Lumi` and launches it. Administrator access is not
+required. The app opens your default browser and prints its local address. Keep
+the terminal open while using Lumi and press **Ctrl+C** there to stop the
+service. Set `LUMI_INSTALL_DIR` to choose a different install directory.
 
 ### Where your data lives
 
