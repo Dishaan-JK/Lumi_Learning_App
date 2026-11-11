@@ -45,7 +45,7 @@ After a GitHub release is published, use the command for your operating system.
 In a terminal, run:
 
 ```sh
-curl -fsSL https://github.com/Dishaan-JK/Lumi_Learning_App/releases/latest/download/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Dishaan-JK/Lumi_Learning_App/React_v/scripts/install.sh | sh
 ```
 
 The installer detects x64 or arm64, downloads the matching Linux build, and
@@ -59,7 +59,7 @@ release binary.
 Open PowerShell and run:
 
 ```powershell
-irm https://github.com/Dishaan-JK/Lumi_Learning_App/releases/latest/download/install.ps1 | iex
+irm https://raw.githubusercontent.com/Dishaan-JK/Lumi_Learning_App/React_v/scripts/install.ps1 | iex
 ```
 
 The installer downloads the Windows x64 build to
