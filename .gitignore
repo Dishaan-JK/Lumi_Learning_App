@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+lumi-web/
+lumi-source.tar.gz
 release/
 *.local
 

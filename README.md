@@ -38,27 +38,12 @@ work on all packaged desktop targets.
 
 ## Install and run Lumi
 
-The steps below install the tools Lumi needs, download the project, and start
-the app. You do this once on each computer. On the first launch Lumi downloads
-its dependencies and checks the build, so an internet connection is required.
+You do not need to install Node.js, Dart, npm packages, or Rust yourself. Lumi
+downloads its private Node.js and Dart runtimes, checks for outdated app
+packages, and updates them when needed. Keep an internet connection on the first
+run so Lumi can download the app and its dependencies.
 
-### 1. Install Node.js and Dart
-
-Install **Node.js 22 or newer** from the [official Node.js download page](https://nodejs.org/en/download/).
-On Windows, choose the Windows Installer (`.msi`) and keep the suggested options.
-
-Install **Dart 3.12 or newer** by following the instructions for your operating
-system on [dart.dev](https://dart.dev/get-dart). On Windows, open PowerShell and
-run the official `winget` install command:
-
-```powershell
-winget install --id=Google.DartSDK -e
-```
-
-On Linux, use the instructions for your distribution on the Dart download page.
-No Rust installation is needed to run Lumi this way.
-
-### 2. Download and extract Lumi
+### 1. Download the project
 
 Download the [Lumi project ZIP for the React_v branch](https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.zip).
 After downloading:
@@ -67,50 +52,49 @@ After downloading:
 - **Linux:** open the ZIP with your archive app and choose **Extract**.
 
 Open the extracted project folder. It contains `Lumi.bat` and `Lumi.sh` at its
-top level. Do not open the `dist` subfolder; the launcher needs the whole
-project folder.
+top level. Keep the whole folder together; the React web files alone do not
+include the backend Lumi needs to save notes and settings.
+
+### 2. (Optional) Download the React web bundle yourself on Linux
+
+You can skip this step. Lumi downloads the React web bundle automatically when
+you start it. If you prefer to download it yourself, open a terminal in the
+extracted project folder and paste these commands:
+
+```sh
+curl -fL https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.tar.gz -o lumi-source.tar.gz &&
+mkdir -p lumi-web &&
+tar -xzf lumi-source.tar.gz --strip-components=1 --wildcards -C lumi-web '*/dist/*'
+```
+
+They place the React web files in `lumi-web/dist/`. You can repeat the commands
+later to refresh the bundle.
 
 ### 3. Start Lumi
 
 - **Windows:** double-click `Lumi.bat`.
-- **Linux:** open a terminal in the extracted project folder, type `sh Lumi.sh`,
-  and press Enter. In many file managers, right-click the folder background and
-  choose **Open in Terminal**.
+- **Linux:** in the project folder, type `sh Lumi.sh` and press Enter. In many
+  file managers, right-click the folder background and choose **Open in
+  Terminal**.
 
-The launcher checks that Node.js, npm, and Dart are available, prepares the
-dependencies, builds the React web app, starts Lumi's local service, and opens
-the app in your default browser. The address is
-[`http://127.0.0.1:5173`](http://127.0.0.1:5173). The first launch can take a
-few minutes while dependencies are downloaded.
+On the first run, Lumi automatically downloads its private runtimes and React
+web bundle, prepares or updates the React and backend packages, and checks
+that both parts of the app start. You do not need to install Node.js, Dart,
+npm packages, or other app packages yourself.
+This can take a few minutes. Lumi then asks whether to open the Web App in your
+default browser. Choose **Yes** to open it at
+[`http://127.0.0.1:5173`](http://127.0.0.1:5173).
 
-Keep the terminal window open while using Lumi. Closing it or pressing
-**Ctrl+C** stops the app. To start Lumi again later, double-click `Lumi.bat` on
-Windows or run `sh Lumi.sh` from the project folder on Linux. Your notes and
-settings are saved on your computer; see [Where your data lives](#where-your-data-lives).
+The first launch also sets up the `lumi` command for your account. On Linux,
+open a new terminal after the first run, then type `lumi` to start Lumi and
+open the app in your browser. On Windows, open a new Command Prompt and type
+`lumi`. Each later `lumi` command starts the frontend and backend and opens the
+browser automatically.
 
-If the browser does not open automatically, open
-[`http://127.0.0.1:5173`](http://127.0.0.1:5173) yourself. If Lumi reports that
-Node.js or Dart is missing, install that tool using the links above, then close
-and reopen the launcher.
-
-### Optional: install a packaged release
-
-Packaged installers are available after a GitHub release includes the app
-binary for your computer. The Linux command is:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/Dishaan-JK/Lumi_Learning_App/React_v/scripts/install.sh | sh
-```
-
-The Windows command, run in PowerShell, is:
-
-```powershell
-irm https://raw.githubusercontent.com/Dishaan-JK/Lumi_Learning_App/React_v/scripts/install.ps1 | iex
-```
-
-If an installer reports a 404 for `lumi-linux-x64` or the Windows app binary,
-that file is not attached to the latest GitHub release yet. Use the project ZIP
-steps above in the meantime.
+Keep the terminal window open while using Lumi. Press **Ctrl+C** there to stop
+both parts of the app. If the browser does not open, visit
+[`http://127.0.0.1:5173`](http://127.0.0.1:5173). Your notes and settings are
+saved on your computer; see [Where your data lives](#where-your-data-lives).
 
 ### Where your data lives
 
@@ -183,13 +167,11 @@ save the new connection. These controls follow Google's
 
 ## Run from source (developers)
 
-Source development requires Node.js 22 or newer, npm, and Dart 3.12 or newer.
-The bundled backend is in this repository, so no sibling checkout is needed.
-From the repository root, start Lumi with the launcher for your operating system.
-It checks Node.js, npm, and Dart, installs missing Node dependencies, restores
-the Dart backend packages, verifies the production React build, checks that
-both the frontend and backend are responding, and opens Lumi in your default
-browser. Keep the terminal open while using Lumi; press **Ctrl+C** there to
+For manual source development, Node.js 22 or newer, npm, and Dart 3.12 or newer
+are used. The normal install steps above provide these tools automatically. The
+bundled backend is in this repository, so no sibling checkout is needed. The
+launcher checks and updates the app packages before starting the Web App and
+backend. Keep the terminal open while using Lumi; press **Ctrl+C** there to
 stop both services.
 
 Linux/macOS:

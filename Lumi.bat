@@ -2,11 +2,11 @@
 setlocal
 cd /d "%~dp0"
 
-where node >nul 2>nul
+where powershell.exe >nul 2>nul
 if errorlevel 1 (
-  echo Lumi requires Node.js 22 or newer. Install Node.js, then run Lumi.bat again.
+  echo Lumi needs Windows PowerShell to install its private runtimes.
   exit /b 1
 )
 
-node "%~dp0scripts\launch-lumi.mjs" %*
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\bootstrap-lumi.ps1" %*
 exit /b %errorlevel%
