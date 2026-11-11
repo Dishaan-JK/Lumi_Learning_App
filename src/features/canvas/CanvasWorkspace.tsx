@@ -6,8 +6,28 @@ import { createCanvas, getCanvases, lumiQueryKeys, updateCanvas, type LumiCanvas
 const WORLD_WIDTH = 3200
 const WORLD_HEIGHT = 2200
 const MAX_CANVAS_POSITION = 10_000
+const MIN_NOTE_WIDTH = 220
+const MIN_NOTE_HEIGHT = 156
+const MAX_NOTE_WIDTH = 1_200
+const MAX_NOTE_HEIGHT = 900
 const clampZoom = (value: number) => Math.min(2.25, Math.max(.4, value))
 const defaultPosition = (index: number): LumiCanvasPosition => ({ x: 120 + (index % 3) * 390, y: 130 + Math.floor(index / 3) * 270 })
+type CanvasNoteSize = { width: number; height: number }
+
+function readCanvasNoteSizes(canvasId: string): Record<string, CanvasNoteSize> {
+  try {
+    const stored = localStorage.getItem(`lumi-canvas-note-sizes:${canvasId}`)
+    if (!stored) return {}
+    const value = JSON.parse(stored) as Record<string, unknown>
+    return Object.fromEntries(Object.entries(value).flatMap(([id, size]) => {
+      if (!size || typeof size !== 'object') return []
+      const { width, height } = size as Partial<CanvasNoteSize>
+      return typeof width === 'number' && Number.isFinite(width) && typeof height === 'number' && Number.isFinite(height)
+        ? [[id, { width: Math.min(MAX_NOTE_WIDTH, Math.max(MIN_NOTE_WIDTH, width)), height: Math.min(MAX_NOTE_HEIGHT, Math.max(MIN_NOTE_HEIGHT, height)) }]]
+        : []
+    }))
+  } catch { return {} }
+}
 
 export function CanvasWorkspace({ notes, selectedCanvasId, onOpenCanvas, onBackToCanvases, onOpenNote, onCreateNote }: { notes: LumiNote[]; selectedCanvasId: string | null; onOpenCanvas: (id: string) => void; onBackToCanvases: () => void; onOpenNote: (id: string) => void; onCreateNote: () => void }) {
   const client = useQueryClient()
@@ -48,12 +68,15 @@ function CanvasBoard({ canvas, notes, onOpenNote, onCreateNote }: { canvas: Lumi
   const client = useQueryClient()
   const viewportRef = useRef<HTMLDivElement>(null)
   const moveRef = useRef<{ id: string; pointerX: number; pointerY: number; startX: number; startY: number } | null>(null)
+  const resizeRef = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; width: number; height: number } | null>(null)
   const panRef = useRef<{ pointerX: number; pointerY: number; startX: number; startY: number } | null>(null)
   const paletteDragRef = useRef<{ pointerX: number; pointerY: number; startX: number; startY: number } | null>(null)
   const zoomRef = useRef(1)
   const [noteIds, setNoteIds] = useState(canvas.noteIds ?? [])
   const [positions, setPositions] = useState<Record<string, LumiCanvasPosition>>(() => Object.fromEntries((canvas.noteIds ?? []).map((id, index) => [id, canvas.positions?.[id] ?? defaultPosition(index)])))
   const positionsRef = useRef(positions)
+  const [noteSizes, setNoteSizes] = useState<Record<string, CanvasNoteSize>>(() => readCanvasNoteSizes(canvas.id))
+  const noteSizesRef = useRef(noteSizes)
   const [connections, setConnections] = useState<LumiCanvasConnection[]>(canvas.connections ?? [])
   const [pan, setPan] = useState({ x: 40, y: 30 })
   const [zoom, setZoom] = useState(1)
@@ -78,6 +101,7 @@ function CanvasBoard({ canvas, notes, onOpenNote, onCreateNote }: { canvas: Lumi
     const element = viewportRef.current
     if (!element) return
     const handleWheel = (event: WheelEvent) => {
+      if ((event.target as HTMLElement).closest('.canvas-note-content')) return
       event.preventDefault()
       if (event.ctrlKey) {
         const rect = element.getBoundingClientRect()
@@ -163,6 +187,35 @@ function CanvasBoard({ canvas, notes, onOpenNote, onCreateNote }: { canvas: Lumi
     update.mutate({ positions: positionsRef.current })
   }
 
+  function startResize(event: ReactPointerEvent<HTMLButtonElement>, id: string) {
+    event.preventDefault()
+    event.stopPropagation()
+    const noteElement = event.currentTarget.closest<HTMLElement>('.canvas-note')
+    if (!noteElement) return
+    resizeRef.current = { id, pointerId: event.pointerId, pointerX: event.clientX, pointerY: event.clientY, width: noteElement.offsetWidth, height: noteElement.offsetHeight }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function resizeNote(event: ReactPointerEvent<HTMLButtonElement>) {
+    const resize = resizeRef.current
+    if (!resize || resize.pointerId !== event.pointerId) return
+    const next = {
+      ...noteSizesRef.current,
+      [resize.id]: {
+        width: Math.min(MAX_NOTE_WIDTH, Math.max(MIN_NOTE_WIDTH, resize.width + (event.clientX - resize.pointerX) / zoom)),
+        height: Math.min(MAX_NOTE_HEIGHT, Math.max(MIN_NOTE_HEIGHT, resize.height + (event.clientY - resize.pointerY) / zoom)),
+      },
+    }
+    noteSizesRef.current = next
+    setNoteSizes(next)
+  }
+
+  function finishResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (resizeRef.current?.pointerId !== event.pointerId) return
+    resizeRef.current = null
+    try { localStorage.setItem(`lumi-canvas-note-sizes:${canvas.id}`, JSON.stringify(noteSizesRef.current)) } catch { /* keep the current layout for this session */ }
+  }
+
   return <div className="canvas-board-shell">
     <div ref={viewportRef} className={`canvas-board ${panMode ? 'is-pan-mode' : ''} ${isPanning ? 'is-panning' : ''}`} aria-label={`${canvas.title} board`} onPointerDown={(event) => { const target = event.target as HTMLElement; if ((panMode || event.shiftKey) && event.button === 0 && !target.closest('.canvas-tool-palette, .canvas-add-popover, .canvas-note-remove')) { panRef.current = { pointerX: event.clientX, pointerY: event.clientY, startX: pan.x, startY: pan.y }; setIsPanning(true); event.preventDefault() } }}>
       <div className="canvas-world" style={{ width: WORLD_WIDTH, height: WORLD_HEIGHT, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
@@ -176,11 +229,12 @@ function CanvasBoard({ canvas, notes, onOpenNote, onCreateNote }: { canvas: Lumi
             return <path className="canvas-edge-path" key={`${edge.sourceId}:${edge.targetId}`} d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`} markerEnd="url(#canvas-arrow)" />
           })}
         </svg>
-        {attachedNotes.map(({ id, note, position }) => <article className={`canvas-note ${selectedNoteId === id ? 'is-selected' : ''} ${connectFrom === id ? 'is-connect-source' : ''}`} key={id} style={{ left: position.x, top: position.y }} onPointerDown={(event) => startMove(event, id)} onPointerMove={(event) => moveNode(event, id)} onPointerUp={() => finishMove(id)} onClick={(event) => { if ((event.target as HTMLElement).closest('button')) return; if (connectMode) connect(connectFrom ? 'target' : 'source', id); else setSelectedNoteId(id) }}>
+        {attachedNotes.map(({ id, note, position }) => <article className={`canvas-note ${noteSizes[id] ? 'is-resized' : ''} ${selectedNoteId === id ? 'is-selected' : ''} ${connectFrom === id ? 'is-connect-source' : ''}`} key={id} style={{ left: position.x, top: position.y, width: noteSizes[id]?.width, height: noteSizes[id]?.height }} onPointerDown={(event) => startMove(event, id)} onPointerMove={(event) => moveNode(event, id)} onPointerUp={() => finishMove(id)} onClick={(event) => { if ((event.target as HTMLElement).closest('button')) return; if (connectMode) connect(connectFrom ? 'target' : 'source', id); else setSelectedNoteId(id) }} onDoubleClick={(event) => { if ((event.target as HTMLElement).closest('button') || connectMode || panMode) return; onOpenNote(id) }}>
           <button className="canvas-note-remove" type="button" aria-label={`Remove ${note?.title || 'note'} from canvas`} title="Remove from canvas" onClick={() => removeNote(id)}><X aria-hidden="true" /></button>
           <span className="canvas-note-label">Note</span>
-          <button className="canvas-note-title" type="button" onClick={() => connectMode ? connect(connectFrom ? 'target' : 'source', id) : panMode ? undefined : onOpenNote(id)}>{note?.title || 'Untitled note'}</button>
-          <p>{(note?.content || 'No preview available.').replace(/[#*_`>]/g, '').slice(0, 170)}</p>
+          <button className="canvas-note-title" type="button" onClick={() => connectMode ? connect(connectFrom ? 'target' : 'source', id) : panMode ? undefined : onOpenNote(id)} onDoubleClick={(event) => { event.stopPropagation(); if (!connectMode && !panMode) onOpenNote(id) }}>{note?.title || 'Untitled note'}</button>
+          <p className="canvas-note-content">{(note?.content || 'No preview available.').replace(/[#*_`>]/g, '')}</p>
+          <button className="canvas-note-resize" type="button" aria-label={`Resize ${note?.title || 'note'}`} title="Drag to resize note" onPointerDown={(event) => startResize(event, id)} onPointerMove={resizeNote} onPointerUp={finishResize} onPointerCancel={finishResize} onLostPointerCapture={finishResize}><span aria-hidden="true" /></button>
         </article>)}
       </div>
       {noteIds.length === 0 && <div className="canvas-empty-state"><span className="canvas-empty-orb"><Plus aria-hidden="true" /></span><strong>A clear space for your ideas</strong><span>Add notes from the floating panel, then connect related thoughts.</span></div>}
@@ -196,7 +250,7 @@ function CanvasBoard({ canvas, notes, onOpenNote, onCreateNote }: { canvas: Lumi
         <button type="button" className={`canvas-pan-hint ${panMode ? 'is-active' : ''}`} aria-label={panMode ? 'Exit pan mode' : 'Enter pan mode'} title={panMode ? 'Exit pan mode' : 'Pan mode'} aria-pressed={panMode} onClick={() => { setConnectMode(false); setConnectFrom(null); setPanMode((value) => !value) }}><Hand aria-hidden="true" /></button>
       </div>
       {addingNotes && <section className="canvas-add-popover" aria-label="Add notes to canvas"><header><div><strong>Add notes</strong><span>Choose notes to place on the board</span></div><button type="button" aria-label="Close note search" onClick={() => setAddingNotes(false)}><X aria-hidden="true" /></button></header><button type="button" className="canvas-create-note" onClick={() => { setAddingNotes(false); onCreateNote() }}>Create a new note</button><label className="canvas-add-search"><Search aria-hidden="true" /><input autoFocus type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search your notes" /></label><div className="canvas-add-results">{availableNotes.length ? availableNotes.slice(0, 8).map((note) => <button type="button" key={note.id} onClick={() => addNote(note.id)}><span><strong>{note.title || 'Untitled note'}</strong><small>{note.content.replace(/[#*_`>]/g, '').slice(0, 70) || 'No preview'}</small></span><Plus aria-hidden="true" /></button>) : <p>{search ? 'No matching notes available.' : 'All your notes are already on this canvas.'}</p>}</div></section>}
-      <div className="canvas-board-hint"><span>{connectMode ? connectFrom ? 'Click the note you want to connect to' : 'Click a note to start a connection' : panMode ? 'Pan mode · Drag the board to move around' : 'Drag notes to arrange them · Scroll to move · Ctrl + scroll to zoom'}</span>{update.isPending ? <span>Saving…</span> : update.isError ? <span role="alert" title={update.error instanceof Error ? update.error.message : 'Unknown save error'}>Save failed: {update.error instanceof Error ? update.error.message : 'Please retry.'}</span> : null}</div>
+      <div className="canvas-board-hint"><span>{connectMode ? connectFrom ? 'Click the note you want to connect to' : 'Click a note to start a connection' : panMode ? 'Pan mode · Drag the board to move around' : 'Drag to move · Double-click to open · Resize from corner · Scroll to move · Ctrl + scroll to zoom'}</span>{update.isPending ? <span>Saving…</span> : update.isError ? <span role="alert" title={update.error instanceof Error ? update.error.message : 'Unknown save error'}>Save failed: {update.error instanceof Error ? update.error.message : 'Please retry.'}</span> : null}</div>
     </div>
   </div>
 }

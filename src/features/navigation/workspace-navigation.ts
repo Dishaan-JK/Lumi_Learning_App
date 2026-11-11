@@ -8,6 +8,7 @@ export type WorkspaceRoute = {
   view: WorkspaceView
   noteId: string | null
   fileId: string | null
+  artifactId: string | null
   folderId: string | null
   settingsSection: SettingsSection
   isExplicit: boolean
@@ -42,6 +43,7 @@ function readRoute(fallback: WorkspaceView): WorkspaceRoute {
     view,
     noteId: params.get('note'),
     fileId: view === 'canvas' ? params.get('file') : null,
+    artifactId: view === 'artifacts' ? params.get('artifact') : null,
     folderId: params.get('folder'),
     settingsSection: isSettingsSection(section) ? section : 'general',
     isExplicit: isWorkspaceView(path),
@@ -52,6 +54,7 @@ function routeUrl(route: WorkspaceRoute): string {
   const params = new URLSearchParams()
   if (route.view === 'notes' && route.noteId) params.set('note', route.noteId)
   if (route.view === 'canvas' && route.fileId) params.set('file', route.fileId)
+  if (route.view === 'artifacts' && route.artifactId) params.set('artifact', route.artifactId)
   if (route.view === 'notes' && route.folderId) params.set('folder', route.folderId)
   if (route.view === 'settings' && route.settingsSection !== 'general') params.set('section', route.settingsSection)
   const query = params.toString()
@@ -73,15 +76,16 @@ export function useWorkspaceNavigation(defaultView: WorkspaceView | undefined) {
     return () => window.removeEventListener('popstate', onPopState)
   }, [defaultView])
 
-  const navigate = useCallback((view: WorkspaceView, details: Partial<Pick<WorkspaceRoute, 'noteId' | 'fileId' | 'folderId' | 'settingsSection'>> = {}) => {
+  const navigate = useCallback((view: WorkspaceView, details: Partial<Pick<WorkspaceRoute, 'noteId' | 'fileId' | 'artifactId' | 'folderId' | 'settingsSection'>> = {}, replace = false) => {
     commit({
       view,
       noteId: details.noteId ?? null,
       fileId: details.fileId ?? null,
+      artifactId: details.artifactId ?? null,
       folderId: details.folderId ?? null,
       settingsSection: details.settingsSection ?? (view === 'settings' ? route.settingsSection : 'general'),
       isExplicit: true,
-    })
+    }, replace)
   }, [commit, route.settingsSection])
 
   const resolvedRoute = route.isExplicit || !defaultView ? route : { ...route, view: defaultView }
