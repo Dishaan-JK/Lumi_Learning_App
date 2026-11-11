@@ -45,32 +45,26 @@ run so Lumi can download the app and its dependencies.
 
 ### 1. Download the project
 
-Download the [Lumi project ZIP for the React_v branch](https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.zip).
-After downloading:
+**Windows:** Download the [Lumi project ZIP for the React_v branch](https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.zip), right-click it, and choose **Extract All**.
 
-- **Windows:** right-click the ZIP and choose **Extract All**.
-- **Linux:** open the ZIP with your archive app and choose **Extract**.
+**Linux:** Open a terminal where you want to install Lumi and run:
+
+```sh
+curl -fL https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.tar.gz -o lumi-source.tar.gz &&
+mkdir -p lumi-web &&
+tar -xzf lumi-source.tar.gz --strip-components=1 -C lumi-web &&
+cd lumi-web
+```
 
 Open the extracted project folder. It contains `Lumi.bat` and `Lumi.sh` at its
 top level. Keep the whole folder together; the React web files alone do not
 include the backend Lumi needs to save notes and settings.
 
-### 2. (Optional) Download the React web bundle yourself on Linux
+The archive includes `dist/`, the `backend/` directory, and the launcher scripts.
+If you previously extracted only `dist/`, run the Linux commands above in a
+new empty folder to get the complete project.
 
-You can skip this step. Lumi downloads the React web bundle automatically when
-you start it. If you prefer to download it yourself, open a terminal in the
-extracted project folder and paste these commands:
-
-```sh
-curl -fL https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.tar.gz -o lumi-source.tar.gz &&
-mkdir -p lumi-web &&
-tar -xzf lumi-source.tar.gz --strip-components=1 --wildcards -C lumi-web '*/dist/*'
-```
-
-They place the React web files in `lumi-web/dist/`. You can repeat the commands
-later to refresh the bundle.
-
-### 3. Start Lumi
+### 2. Start Lumi
 
 - **Windows:** double-click `Lumi.bat`.
 - **Linux:** in the project folder, type `sh Lumi.sh` and press Enter. In many
