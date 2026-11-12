@@ -90,6 +90,12 @@ open the app in your browser. On Windows, open a new Command Prompt and type
 `lumi install` or `lumi`. Each later `lumi` command starts the frontend and backend and opens the
 browser automatically.
 
+After the first setup, run `lumi` from any folder in a new terminal to reopen
+the same workspace. Lumi restores the last workspace view in the same browser;
+notes, settings, canvases, and chats are stored locally. Existing source installs
+with data in `backend/.data` continue to use that directory. Browser-only state
+is tied to the same browser and local app address.
+
 Keep the terminal window open while using Lumi. Press **Ctrl+C** there to stop
 both parts of the app. If the browser does not open, visit
 [`http://127.0.0.1:5173`](http://127.0.0.1:5173). Your notes and settings are

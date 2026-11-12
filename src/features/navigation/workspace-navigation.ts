@@ -34,9 +34,9 @@ function isSettingsSection(value: string | null): value is SettingsSection {
   return value !== null && settingsSections.includes(value as SettingsSection)
 }
 
-function readRoute(fallback: WorkspaceView): WorkspaceRoute {
-  const path = window.location.pathname.split('/').filter(Boolean).at(-1) ?? ''
-  const params = new URLSearchParams(window.location.search)
+function readRoute(fallback: WorkspaceView, location: Pick<Location, 'pathname' | 'search'> = window.location): WorkspaceRoute {
+  const path = location.pathname.split('/').filter(Boolean).at(-1) ?? ''
+  const params = new URLSearchParams(location.search)
   const view = isWorkspaceView(path) ? path : fallback
   const section = params.get('section')
   return {
@@ -61,8 +61,32 @@ function routeUrl(route: WorkspaceRoute): string {
   return `${routePath[route.view]}${query ? `?${query}` : ''}`
 }
 
+const LAST_ROUTE_KEY = 'lumi.workspace.last-route'
+
+function initialRoute(fallback: WorkspaceView): WorkspaceRoute {
+  const current = readRoute(fallback)
+  if (current.isExplicit || window.location.pathname !== '/') return current
+  try {
+    const saved = localStorage.getItem(LAST_ROUTE_KEY)
+    if (saved) {
+      const url = new URL(saved, window.location.origin)
+      if (url.origin === window.location.origin && /^\/(home|notes|artifacts|canvas|graph|focus|settings)$/.test(url.pathname)) {
+        return readRoute(fallback, url)
+      }
+    }
+  } catch { /* Browser storage can be unavailable or invalid. */ }
+  return current
+}
+
 export function useWorkspaceNavigation(defaultView: WorkspaceView | undefined) {
-  const [route, setRoute] = useState<WorkspaceRoute>(() => readRoute(defaultView ?? 'notes'))
+  const [route, setRoute] = useState<WorkspaceRoute>(() => initialRoute(defaultView ?? 'notes'))
+
+  useEffect(() => {
+    if (!route.isExplicit) return
+    const url = routeUrl(route)
+    try { localStorage.setItem(LAST_ROUTE_KEY, url) } catch { /* Keep navigation usable without storage. */ }
+    if (window.location.pathname === '/') window.history.replaceState({}, '', url)
+  }, [route])
 
   const commit = useCallback((next: WorkspaceRoute, replace = false) => {
     const url = routeUrl(next)

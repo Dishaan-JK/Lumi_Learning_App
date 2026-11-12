@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
 
 const projectRoot = join(import.meta.dirname, '..')
@@ -8,6 +9,16 @@ const backendUrl = process.env.LUMI_BACKEND_URL ?? 'http://127.0.0.1:8080'
 const frontendPort = process.env.LUMI_FRONTEND_PORT ?? '5173'
 const localDevOrigins = `http://127.0.0.1:${frontendPort},http://localhost:${frontendPort}`
 const dart = process.env.LUMI_DART_EXECUTABLE ?? 'dart'
+const legacyData = join(backendRoot, '.data')
+const accountData = process.platform === 'win32'
+  ? join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'Lumi')
+  : process.platform === 'darwin'
+    ? join(homedir(), 'Library', 'Application Support', 'Lumi')
+    : join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'lumi')
+// Keep existing source-install workspaces where they are. New installs use the
+// same account directory as the packaged application.
+const dataDirectory = process.env.LUMI_DATA_DIR || (existsSync(legacyData) ? legacyData : accountData)
+
 
 async function isReachable() {
   try {
@@ -32,6 +43,7 @@ const child = spawn(dart, ['run', 'bin/server.dart'], {
   cwd: backendRoot,
   env: {
     ...process.env,
+    LUMI_DATA_DIR: dataDirectory,
     // The backend rejects every browser origin unless it is explicitly named.
     // Keep the default limited to this local Vite instance; deployments should
     // set LUMI_ALLOWED_ORIGINS themselves.
