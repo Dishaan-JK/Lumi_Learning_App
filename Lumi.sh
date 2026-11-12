@@ -13,7 +13,6 @@ case "$(uname -s)" in
       echo 'Lumi launcher files are missing. Extract the complete project archive and try again.' >&2
       exit 1
     fi
-    echo 'Detected Linux; starting Lumi setup...'
     exec bash "$PROJECT_ROOT/scripts/bootstrap-lumi.sh" "$@"
     ;;
   MINGW*|MSYS*|CYGWIN*)
@@ -26,7 +25,6 @@ case "$(uname -s)" in
       exit 1
     fi
     windows_script=$(cygpath -w "$PROJECT_ROOT/scripts/bootstrap-lumi.ps1")
-    echo 'Detected Windows; starting Lumi setup...'
     exec powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$windows_script" "$@"
     ;;
   Darwin)

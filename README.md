@@ -45,37 +45,28 @@ first run if needed. Existing project packages are checked and reused; Lumi
 repairs or updates them when necessary. Keep an internet connection on the first
 run so Lumi can download the app and its dependencies.
 
-### 1. Download the project
+### Install from a clone
 
-**Windows:** Download the [Lumi project ZIP for the React_v branch](https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.zip), right-click it, and choose **Extract All**.
-
-**Linux:** Open a terminal in the folder where you want to install Lumi. You
-need Bash, curl and tar for the project download; xz and unzip are needed
-if Lumi must download its own runtimes. Run:
+Install Git first, then clone the React branch:
 
 ```sh
-curl -fL https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.tar.gz -o lumi-source.tar.gz &&
-mkdir -p lumi-web &&
-tar -xzf lumi-source.tar.gz --strip-components=1 -C lumi-web &&
-cd lumi-web &&
-sh Lumi.sh
+git clone --branch React_v https://github.com/Dishaan-JK/Lumi_Learning_App.git
+cd Lumi_Learning_App
 ```
 
-Open the extracted project folder. It contains `Lumi.bat` and `Lumi.sh` at its
-top level. Keep the whole folder together; the React web files alone do not
-include the backend Lumi needs to save notes and settings.
+Start the installer from the cloned folder:
 
-The archive includes `dist/`, the `backend/` directory, and the launcher scripts.
-If you previously extracted only `dist/`, run the Linux commands above in a
-new empty folder to get the complete project.
+- **Linux or Git Bash:** `./lumi install`
+- **Windows PowerShell:** `.\lumi.cmd install`
+- **Windows Command Prompt:** `lumi.cmd install`
 
-### 2. Start Lumi
+The terminal shows the detected OS, each setup step and package download, the
+app URL, and the controls. It opens the browser when Lumi is ready. Keep the
+terminal open; press **Ctrl+C** to stop Lumi and see the exit message.
 
-- **Windows:** double-click `Lumi.bat`. In Git Bash, MSYS, or Cygwin, you can
-  instead run `sh Lumi.sh`; it detects Windows and starts the Windows setup.
-- **Linux:** in the project folder, type `sh Lumi.sh` and press Enter. In many
-  file managers, right-click the folder background and choose **Open in
-  Terminal**. The launcher detects Linux and starts the Linux setup.
+Alternatively, [download the project ZIP](https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.zip),
+extract it, and double-click `Lumi.bat` on Windows or run `sh Lumi.sh` from the
+extracted folder on Linux. Keep the entire project folder together.
 
 The source launcher supports Linux and Windows. macOS users need a macOS
 release build; the source launcher does not yet set up macOS.
@@ -88,14 +79,15 @@ This can take a few minutes. Once both services are ready, Lumi opens the app
 in your default browser at
 [`http://127.0.0.1:5173`](http://127.0.0.1:5173).
 
-To update Lumi itself later, download and extract a fresh project archive into a
-new folder and start it using the same steps. Your workspace data is stored
+To update a cloned installation, run `git pull` in the project folder, then run
+the install command again. For a ZIP installation, download and extract a new
+archive into a new folder. Your workspace data is stored
 separately.
 
 The first launch also sets up the `lumi` command for your account. On Linux,
-open a new terminal after the first run, then type `lumi` to start Lumi and
+open a new terminal after the first run, then type `lumi install` or `lumi` to start Lumi and
 open the app in your browser. On Windows, open a new Command Prompt and type
-`lumi`. Each later `lumi` command starts the frontend and backend and opens the
+`lumi install` or `lumi`. Each later `lumi` command starts the frontend and backend and opens the
 browser automatically.
 
 Keep the terminal window open while using Lumi. Press **Ctrl+C** there to stop

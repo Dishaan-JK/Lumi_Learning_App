@@ -8,6 +8,18 @@ NODE_STATE="$RUNTIME_HOME/node-version"
 DART_STATE="$RUNTIME_HOME/dart-version"
 mkdir -p "$RUNTIME_HOME"
 
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then printf '\033[92m'; fi
+cat <<'BANNER'
+  _     _   _ __  __ ___
+ | |   | | | |  \/  |_ _|
+ | |   | | | | |\/| || |
+ | |___| |_| | |  | || |
+ |_____|\___/|_|  |_|___|
+BANNER
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then printf '\033[0m'; fi
+printf '\n  Lumi setup  |  OS: Linux %s\n' "$(uname -m)"
+printf '  Checking runtimes and packages, then starting Lumi.\n\n'
+
 if [ "$(uname -s)" != Linux ]; then
   echo 'This source launcher currently supports Linux. Windows uses Lumi.bat.' >&2
   exit 1

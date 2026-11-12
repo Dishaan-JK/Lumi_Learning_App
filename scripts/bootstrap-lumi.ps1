@@ -6,6 +6,17 @@ $nodeState = Join-Path $runtimeRoot 'node-version.txt'
 $dartState = Join-Path $runtimeRoot 'dart-version.txt'
 $webRoot = Join-Path $projectRoot 'dist'
 
+$banner = @'
+  _     _   _ __  __ ___
+ | |   | | | |  \/  |_ _|
+ | |   | | | | |\/| || |
+ | |___| |_| | |  | || |
+ |_____|\___/|_|  |_|___|
+'@
+Write-Host $banner -ForegroundColor Green
+Write-Host "`n  Lumi setup  |  OS: Windows $env:PROCESSOR_ARCHITECTURE"
+Write-Host "  Checking runtimes and packages, then starting Lumi.`n"
+
 New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
 if ($env:PROCESSOR_ARCHITECTURE -match 'ARM64') { $assetArch = 'arm64' }
 elseif ($env:PROCESSOR_ARCHITECTURE -match 'AMD64') { $assetArch = 'x64' }

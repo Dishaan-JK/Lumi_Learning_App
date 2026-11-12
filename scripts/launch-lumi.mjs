@@ -278,8 +278,9 @@ async function main() {
   const backendUrl = process.env.LUMI_BACKEND_URL ?? 'http://127.0.0.1:8080'
 
   if (await reuseRunningApp(appUrl, backendUrl)) {
-    console.log(`Lumi is already running at ${appUrl}`)
+    console.log(`\n  Lumi is already running\n  URL: ${appUrl}\n  Controls: stop Lumi in its original terminal.\n`)
     openDefaultBrowser(appUrl)
+    console.log('  Leaving this launcher. Enjoy learning with Lumi!')
     return
   }
 
@@ -340,7 +341,7 @@ async function main() {
     })
 
     await waitForApp(frontendProcess, appUrl, () => frontendExit)
-    console.log(`Lumi's frontend and backend are ready at ${appUrl}`)
+    console.log(`\n  Lumi is ready\n  URL: ${appUrl}\n  Controls: keep this terminal open; press Ctrl+C to stop Lumi.\n`)
     openDefaultBrowser(appUrl)
 
     const result = await frontendExited
@@ -355,6 +356,7 @@ async function main() {
   } finally {
     process.removeListener('SIGINT', stopServices)
     process.removeListener('SIGTERM', stopServices)
+    console.log('\n  Leaving Lumi. Thanks for learning with Lumi!')
   }
 }
 
