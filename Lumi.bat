@@ -9,4 +9,10 @@ if errorlevel 1 (
 )
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\bootstrap-lumi.ps1" %*
-exit /b %errorlevel%
+set "LUMI_EXIT=%errorlevel%"
+if not "%LUMI_EXIT%"=="0" (
+  echo.
+  echo Lumi could not start. Check the message above.
+  pause
+)
+exit /b %LUMI_EXIT%

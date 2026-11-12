@@ -39,21 +39,26 @@ work on all packaged desktop targets.
 ## Install and run Lumi
 
 You do not need to install Node.js, Dart, npm packages, or Rust yourself. Lumi
-downloads its private Node.js and Dart runtimes, checks for outdated app
-packages, and updates them when needed. Keep an internet connection on the first
+uses Node.js 22+ with npm and Dart 3.12+ if they are already installed.
+Otherwise, it downloads private runtimes. It installs the app packages on the
+first run if needed. Existing project packages are checked and reused; Lumi
+repairs or updates them when necessary. Keep an internet connection on the first
 run so Lumi can download the app and its dependencies.
 
 ### 1. Download the project
 
 **Windows:** Download the [Lumi project ZIP for the React_v branch](https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.zip), right-click it, and choose **Extract All**.
 
-**Linux:** Open a terminal where you want to install Lumi and run:
+**Linux:** Open a terminal in the folder where you want to install Lumi. You
+need Bash, curl and tar for the project download; xz and unzip are needed
+if Lumi must download its own runtimes. Run:
 
 ```sh
 curl -fL https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.tar.gz -o lumi-source.tar.gz &&
 mkdir -p lumi-web &&
 tar -xzf lumi-source.tar.gz --strip-components=1 -C lumi-web &&
-cd lumi-web
+cd lumi-web &&
+sh Lumi.sh
 ```
 
 Open the extracted project folder. It contains `Lumi.bat` and `Lumi.sh` at its
@@ -66,18 +71,26 @@ new empty folder to get the complete project.
 
 ### 2. Start Lumi
 
-- **Windows:** double-click `Lumi.bat`.
+- **Windows:** double-click `Lumi.bat`. In Git Bash, MSYS, or Cygwin, you can
+  instead run `sh Lumi.sh`; it detects Windows and starts the Windows setup.
 - **Linux:** in the project folder, type `sh Lumi.sh` and press Enter. In many
   file managers, right-click the folder background and choose **Open in
-  Terminal**.
+  Terminal**. The launcher detects Linux and starts the Linux setup.
 
-On the first run, Lumi automatically downloads its private runtimes and React
-web bundle, prepares or updates the React and backend packages, and checks
+The source launcher supports Linux and Windows. macOS users need a macOS
+release build; the source launcher does not yet set up macOS.
+
+On the first run, Lumi checks for usable runtimes, downloads any that are
+missing, prepares the React and backend packages, and checks
 that both parts of the app start. You do not need to install Node.js, Dart,
 npm packages, or other app packages yourself.
-This can take a few minutes. Lumi then asks whether to open the Web App in your
-default browser. Choose **Yes** to open it at
+This can take a few minutes. Once both services are ready, Lumi opens the app
+in your default browser at
 [`http://127.0.0.1:5173`](http://127.0.0.1:5173).
+
+To update Lumi itself later, download and extract a fresh project archive into a
+new folder and start it using the same steps. Your workspace data is stored
+separately.
 
 The first launch also sets up the `lumi` command for your account. On Linux,
 open a new terminal after the first run, then type `lumi` to start Lumi and
@@ -162,16 +175,16 @@ save the new connection. These controls follow Google's
 ## Run from source (developers)
 
 For manual source development, Node.js 22 or newer, npm, and Dart 3.12 or newer
-are used. The normal install steps above provide these tools automatically. The
+are used. The Linux and Windows launchers above provide these tools automatically. The
 bundled backend is in this repository, so no sibling checkout is needed. The
 launcher checks and updates the app packages before starting the Web App and
 backend. Keep the terminal open while using Lumi; press **Ctrl+C** there to
 stop both services.
 
-Linux/macOS:
+Linux:
 
 ```sh
-./Lumi.sh
+sh Lumi.sh
 ```
 
 Windows PowerShell or Command Prompt:

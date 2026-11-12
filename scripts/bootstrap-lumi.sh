@@ -6,9 +6,6 @@ DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
 RUNTIME_HOME="$DATA_HOME/lumi/runtime"
 NODE_STATE="$RUNTIME_HOME/node-version"
 DART_STATE="$RUNTIME_HOME/dart-version"
-WEB_REVISION_FILE="$RUNTIME_HOME/web-revision"
-MARKER="$RUNTIME_HOME/first-run-complete"
-ARCHIVE_URL='https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.tar.gz'
 mkdir -p "$RUNTIME_HOME"
 
 if [ "$(uname -s)" != Linux ]; then
@@ -22,103 +19,90 @@ case "$(uname -m)" in
   *) echo "Lumi does not have a bundled runtime for $(uname -m)." >&2; exit 1 ;;
 esac
 
-for command_name in curl tar awk sed cut head; do
-  if ! command -v "$command_name" >/dev/null 2>&1; then
-    echo "Lumi needs the standard '$command_name' command to download and unpack its private runtimes." >&2
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Lumi needs '$1' to download and unpack its private runtimes." >&2
     exit 1
   fi
-done
+}
 
-node_version=$(cat "$NODE_STATE" 2>/dev/null || true)
-latest_node=$(curl -fsSL --max-time 15 https://nodejs.org/dist/index.tab 2>/dev/null \
-  | awk -F '\t' 'NR > 1 && $10 != "-" { sub(/^v/, "", $1); print $1; exit }' || true)
-if [ -n "$latest_node" ]; then node_version=$latest_node; fi
-if [ -z "$node_version" ]; then
-  echo 'Could not find a Node.js 22 or newer runtime and could not reach nodejs.org.' >&2
-  exit 1
-fi
-node_major=${node_version%%.*}
-if [ "$node_major" -lt 22 ]; then
-  echo "Node.js 22 or newer is required; nodejs.org reported $node_version." >&2
-  exit 1
+node_usable() {
+  [ -x "$1" ] && "$1" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' >/dev/null 2>&1
+}
+dart_usable() {
+  [ -x "$1" ] || return 1
+  local version major minor
+  version=$("$1" --version 2>&1 | sed -n 's/.*version: \([0-9][0-9]*\)\.\([0-9][0-9]*\)\..*/\1 \2/p')
+  read -r major minor <<< "$version"
+  [ -n "$major" ] && { [ "$major" -gt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -ge 12 ]; }; }
+}
+
+NODE_BIN=$(command -v node || true)
+if [ -n "$NODE_BIN" ] && node_usable "$NODE_BIN" && command -v npm >/dev/null 2>&1 && npm --version >/dev/null 2>&1; then
+  echo "Using installed Node.js $("$NODE_BIN" --version) and npm."
+else
+  node_version=$(cat "$NODE_STATE" 2>/dev/null || true)
+  NODE_BIN="$RUNTIME_HOME/node-v$node_version/bin/node"
+  if [ -z "$node_version" ] || ! node_usable "$NODE_BIN" || [ ! -x "$(dirname "$NODE_BIN")/npm" ]; then
+    for command_name in curl tar xz awk; do require_command "$command_name"; done
+    node_version=$(curl -fsSL --max-time 15 https://nodejs.org/dist/index.tab | awk -F '\t' 'NR > 1 && $10 != "-" && !found { sub(/^v/, "", $1); print $1; found=1 }')
+    if [ -z "$node_version" ] || [ "${node_version%%.*}" -lt 22 ]; then
+      echo 'Could not find a Node.js 22 or newer runtime.' >&2; exit 1
+    fi
+    NODE_HOME="$RUNTIME_HOME/node-v$node_version"
+    temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/lumi-runtime.XXXXXX")
+    trap 'rm -rf "$temp_dir"' EXIT HUP INT TERM
+    echo "Downloading Node.js $node_version for Linux $ASSET_ARCH..."
+    curl -fL --retry 2 "https://nodejs.org/dist/v$node_version/node-v$node_version-linux-$ASSET_ARCH.tar.xz" -o "$temp_dir/node.tar.xz"
+    mkdir "$temp_dir/node"
+    tar -xJf "$temp_dir/node.tar.xz" --strip-components=1 -C "$temp_dir/node"
+    node_usable "$temp_dir/node/bin/node" || { echo 'Downloaded Node.js is unusable.' >&2; exit 1; }
+    rm -rf "$NODE_HOME"
+    mv "$temp_dir/node" "$NODE_HOME"
+    printf '%s\n' "$node_version" > "$NODE_STATE"
+    trap - EXIT HUP INT TERM
+    rm -rf "$temp_dir"
+    NODE_BIN="$NODE_HOME/bin/node"
+  fi
+  export PATH="$(dirname "$NODE_BIN"):$PATH"
+  echo "Using Lumi's private Node.js $("$NODE_BIN" --version)."
 fi
 
-NODE_HOME="$RUNTIME_HOME/node-v$node_version"
-NODE_BIN="$NODE_HOME/bin/node"
-if [ ! -x "$NODE_BIN" ]; then
-  temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/lumi-runtime.XXXXXX")
-  trap 'rm -rf "$temp_dir"' EXIT HUP INT TERM
-  node_archive="node-v$node_version-linux-$ASSET_ARCH.tar.xz"
-  echo "Downloading Node.js $node_version for Linux $ASSET_ARCH..."
-  curl -fL --retry 2 "https://nodejs.org/dist/v$node_version/$node_archive" -o "$temp_dir/node.tar.xz"
-  mkdir "$temp_dir/node"
-  tar -xJf "$temp_dir/node.tar.xz" --strip-components=1 -C "$temp_dir/node"
-  rm -rf "$NODE_HOME"
-  mv "$temp_dir/node" "$NODE_HOME"
-  rm -f "$temp_dir/node.tar.xz"
-  trap - EXIT HUP INT TERM
-  rm -rf "$temp_dir"
-fi
-printf '%s\n' "$node_version" > "$NODE_STATE"
-
-export PATH="$NODE_HOME/bin:$PATH"
-export LUMI_DART_EXECUTABLE="$RUNTIME_HOME/dart-sdk/bin/dart"
-export LUMI_RUNTIME_HOME="$RUNTIME_HOME"
-current_dart=''
-if [ -x "$LUMI_DART_EXECUTABLE" ]; then
-  current_dart=$("$LUMI_DART_EXECUTABLE" --version 2>&1 | sed -n 's/.*version: \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p')
-fi
-latest_dart=$(curl -fsSL --max-time 15 https://storage.googleapis.com/dart-archive/channels/stable/release/latest/VERSION 2>/dev/null \
-  | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p' || true)
-if [ -z "$latest_dart" ]; then latest_dart=${current_dart:-$(cat "$DART_STATE" 2>/dev/null || true)}; fi
-if [ -z "$latest_dart" ]; then
-  echo 'Could not find a Dart 3.12 or newer runtime and could not reach dart.dev.' >&2
-  exit 1
-fi
-dart_major=${latest_dart%%.*}
-dart_minor=$(printf '%s\n' "$latest_dart" | cut -d. -f2)
-if [ "$dart_major" -lt 3 ] || { [ "$dart_major" -eq 3 ] && [ "$dart_minor" -lt 12 ]; }; then
-  echo "Dart 3.12 or newer is required; dart.dev reported $latest_dart." >&2
-  exit 1
-fi
-if [ "$current_dart" != "$latest_dart" ]; then
+system_dart=$(command -v dart || true)
+# Flutter's wrapper may try to update its cache; use its SDK executable directly.
+case "$system_dart" in
+  */flutter/bin/dart) [ ! -x "${system_dart%/dart}/cache/dart-sdk/bin/dart" ] || system_dart="${system_dart%/dart}/cache/dart-sdk/bin/dart" ;;
+esac
+if [ -n "$system_dart" ] && dart_usable "$system_dart"; then
+  LUMI_DART_EXECUTABLE="$system_dart"
+  echo "Using installed Dart: $LUMI_DART_EXECUTABLE"
+elif dart_usable "$RUNTIME_HOME/dart-sdk/bin/dart"; then
+  LUMI_DART_EXECUTABLE="$RUNTIME_HOME/dart-sdk/bin/dart"
+  echo "Using Lumi's private Dart SDK."
+else
+  for command_name in curl unzip sed; do require_command "$command_name"; done
+  latest_dart=$(curl -fsSL --max-time 15 https://storage.googleapis.com/dart-archive/channels/stable/release/latest/VERSION | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p')
+  if [ -z "$latest_dart" ]; then echo 'Could not find a Dart runtime.' >&2; exit 1; fi
   temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/lumi-dart.XXXXXX")
   trap 'rm -rf "$temp_dir"' EXIT HUP INT TERM
-  dart_archive="dartsdk-linux-$ASSET_ARCH-release.zip"
   echo "Downloading Dart $latest_dart for Linux $ASSET_ARCH..."
-  curl -fL --retry 2 "https://storage.googleapis.com/dart-archive/channels/stable/release/$latest_dart/sdk/$dart_archive" -o "$temp_dir/dart.zip"
-  npm exec --yes --package=extract-zip -- extract-zip "$temp_dir/dart.zip" "$temp_dir"
+  curl -fL --retry 2 "https://storage.googleapis.com/dart-archive/channels/stable/release/$latest_dart/sdk/dartsdk-linux-$ASSET_ARCH-release.zip" -o "$temp_dir/dart.zip"
+  unzip -q "$temp_dir/dart.zip" -d "$temp_dir"
+  dart_usable "$temp_dir/dart-sdk/bin/dart" || { echo 'Downloaded Dart SDK is unusable or older than 3.12.' >&2; exit 1; }
   rm -rf "$RUNTIME_HOME/dart-sdk"
   mv "$temp_dir/dart-sdk" "$RUNTIME_HOME/dart-sdk"
   printf '%s\n' "$latest_dart" > "$DART_STATE"
   trap - EXIT HUP INT TERM
   rm -rf "$temp_dir"
+  LUMI_DART_EXECUTABLE="$RUNTIME_HOME/dart-sdk/bin/dart"
 fi
-printf '%s\n' "$latest_dart" > "$DART_STATE"
+export LUMI_DART_EXECUTABLE LUMI_RUNTIME_HOME="$RUNTIME_HOME"
 
-WEB_ROOT="$PROJECT_ROOT/lumi-web/dist"
-mkdir -p "$PROJECT_ROOT/lumi-web"
-web_revision=$(curl -fsSL --max-time 15 https://api.github.com/repos/Dishaan-JK/Lumi_Learning_App/commits/React_v 2>/dev/null \
-  | sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([a-f0-9][a-f0-9]*\)".*/\1/p' | head -n 1 || true)
-installed_web_revision=$(cat "$WEB_REVISION_FILE" 2>/dev/null || true)
-bundle_missing=0
-if [ ! -f "$WEB_ROOT/index.html" ]; then bundle_missing=1; fi
-if [ "$bundle_missing" -eq 1 ] || { [ -n "$web_revision" ] && [ -n "$installed_web_revision" ] && [ "$web_revision" != "$installed_web_revision" ]; }; then
-  temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/lumi-web.XXXXXX")
-  trap 'rm -rf "$temp_dir"' EXIT HUP INT TERM
-  echo 'Downloading the React web app...'
-  curl -fL --retry 2 "$ARCHIVE_URL" -o "$temp_dir/source.tar.gz"
-  mkdir "$temp_dir/web"
-  tar -xzf "$temp_dir/source.tar.gz" --strip-components=1 --wildcards -C "$temp_dir/web" '*/dist/*'
-  test -f "$temp_dir/web/dist/index.html"
-  rm -rf "$PROJECT_ROOT/lumi-web"
-  mv "$temp_dir/web" "$PROJECT_ROOT/lumi-web"
-  if [ -n "$web_revision" ]; then printf '%s\n' "$web_revision" > "$WEB_REVISION_FILE"; fi
-  trap - EXIT HUP INT TERM
-  rm -rf "$temp_dir"
-elif [ -n "$web_revision" ] && [ -z "$installed_web_revision" ]; then
-  # The first-run bundle came from the branch ZIP or the documented curl command.
-  printf '%s\n' "$web_revision" > "$WEB_REVISION_FILE"
+# Keep the frontend and backend from the same downloaded project snapshot.
+WEB_ROOT="$PROJECT_ROOT/dist"
+if [ ! -f "$WEB_ROOT/index.html" ]; then
+  echo 'The React bundle is missing. Download and extract the complete Lumi project again.' >&2
+  exit 1
 fi
 
 CLI_DIR="$HOME/.local/bin"
@@ -157,8 +141,6 @@ if ! printf '%s' ":$PATH:" | grep -Fq ":$CLI_DIR:"; then
   fi
 fi
 
-if [ ! -e "$MARKER" ]; then export LUMI_PROMPT_OPEN=1; fi
-export LUMI_SETUP_MARKER="$MARKER"
 export LUMI_FRONTEND_PORT=${LUMI_FRONTEND_PORT:-5173}
 export LUMI_WEB_DIR="$WEB_ROOT"
 exec "$NODE_BIN" "$PROJECT_ROOT/scripts/launch-lumi.mjs" "$@"

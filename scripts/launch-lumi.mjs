@@ -1,10 +1,8 @@
 import { existsSync } from 'node:fs'
-import { cp, readFile, writeFile } from 'node:fs/promises'
+import { cp, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import { createInterface } from 'node:readline/promises'
-import { stdin, stdout } from 'node:process'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -60,7 +58,9 @@ function checkDart(dart) {
   if (match && (Number(match[1]) < 3 || (Number(match[1]) === 3 && Number(match[2]) < 12))) {
     throw new Error(`Dart 3.12 or newer is required; found ${match[1]}.${match[2]}.${match[3]}.`)
   }
-  console.log(`Using ${versionOutput.trim().split(/\r?\n/).at(-1)}.`)
+  const version = versionOutput.trim().split(/\r?\n/).at(-1)
+  console.log(`Using ${version}.`)
+  return version
 }
 
 function checkProjectFiles() {
@@ -79,13 +79,61 @@ async function hashFiles(paths) {
   }
 }
 
-async function prepareDependencies(dart, env) {
+async function npmDependenciesMatch() {
+  try {
+    const lock = JSON.parse(await readFile(join(projectRoot, 'package-lock.json'), 'utf8'))
+    const installed = JSON.parse(await readFile(join(projectRoot, 'node_modules', '.package-lock.json'), 'utf8'))
+    if (!lock.packages || !installed.packages) return false
+    for (const [path, pkg] of Object.entries(lock.packages)) {
+      if (!path || pkg.optional) continue
+      const actual = installed.packages[path]
+      if (!actual || actual.version !== pkg.version || actual.integrity !== pkg.integrity || !existsSync(join(projectRoot, path, 'package.json'))) return false
+    }
+    for (const [path, pkg] of Object.entries(installed.packages)) {
+      const expected = lock.packages[path]
+      if (!expected || expected.version !== pkg.version || expected.integrity !== pkg.integrity || !existsSync(join(projectRoot, path, 'package.json'))) return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function dartDependenciesMatch(configPath, dartVersion) {
+  try {
+    const configStat = await stat(configPath)
+    const [pubspecStat, lockStat] = await Promise.all([
+      stat(join(backendRoot, 'pubspec.yaml')),
+      stat(join(backendRoot, 'pubspec.lock')),
+    ])
+    if (configStat.mtimeMs < Math.max(pubspecStat.mtimeMs, lockStat.mtimeMs)) return false
+    const config = JSON.parse(await readFile(configPath, 'utf8'))
+    const version = dartVersion.match(/version:\s*(\d+\.\d+\.\d+)/i)?.[1]
+    if (!version || config.generatorVersion !== version || !Array.isArray(config.packages) || config.packages.length === 0) return false
+    const base = pathToFileURL(configPath)
+    return config.packages.every((pkg) => typeof pkg.rootUri === 'string' && existsSync(fileURLToPath(new URL(pkg.rootUri, base))))
+  } catch {
+    return false
+  }
+}
+
+async function prepareDependencies(dart, dartVersion, env) {
   const vite = join(projectRoot, 'node_modules', '.bin', isWindows ? 'vite.cmd' : 'vite')
   const npmState = join(projectRoot, 'node_modules', '.lumi-package-lock-hash')
-  const packageLockHash = await hashFiles([join(projectRoot, 'package-lock.json')])
+  const npmLockHash = await hashFiles([join(projectRoot, 'package-lock.json')])
+  const packageLockHash = npmLockHash && `${npmLockHash}:${process.versions.modules}`
   let installedPackageLockHash
   try { installedPackageLockHash = await readFile(npmState, 'utf8') } catch { installedPackageLockHash = '' }
-  if (!existsSync(vite) || !packageLockHash || installedPackageLockHash.trim() !== packageLockHash) {
+  if (existsSync(vite) && await npmDependenciesMatch()) {
+    const previous = installedPackageLockHash.trim().match(/^([a-f0-9]{64}):(\d+)$/)
+    if (previous && previous[1] === npmLockHash && previous[2] !== process.versions.modules) {
+      console.log('Rebuilding React app packages for the selected Node.js runtime...')
+      await run(npm, ['rebuild'], { env })
+    } else {
+      console.log('Using existing React app packages.')
+    }
+    if (packageLockHash) await writeFile(npmState, packageLockHash, 'utf8')
+  } else {
     console.log('Installing or updating the React app packages with npm ci...')
     await run(npm, ['ci'], { env })
     if (packageLockHash) await writeFile(npmState, packageLockHash, 'utf8')
@@ -93,13 +141,20 @@ async function prepareDependencies(dart, env) {
 
   const dartConfig = join(backendRoot, '.dart_tool', 'package_config.json')
   const dartState = join(backendRoot, '.dart_tool', '.lumi-package-lock-hash')
-  const dartLockHash = await hashFiles([join(backendRoot, 'pubspec.yaml'), join(backendRoot, 'pubspec.lock')])
+  const dartFiles = [join(backendRoot, 'pubspec.yaml'), join(backendRoot, 'pubspec.lock')]
+  let dartFilesHash = await hashFiles(dartFiles)
+  let dartLockHash = dartFilesHash && `${dartFilesHash}:${dartVersion}`
   let installedDartLockHash
   try { installedDartLockHash = await readFile(dartState, 'utf8') } catch { installedDartLockHash = '' }
-  if (!existsSync(dartConfig) || !dartLockHash || installedDartLockHash.trim() !== dartLockHash) {
+  if (await dartDependenciesMatch(dartConfig, dartVersion) && (!installedDartLockHash || installedDartLockHash.trim() === dartLockHash)) {
+    console.log('Using existing Lumi backend packages.')
+    if (dartLockHash) await writeFile(dartState, dartLockHash, 'utf8')
+  } else {
     console.log('Preparing or updating the Lumi backend packages...')
     const pubArgs = ['pub', 'get', ...(env.LUMI_PUB_OFFLINE === '1' ? ['--offline'] : [])]
     await run(dart, pubArgs, { cwd: backendRoot, env })
+    dartFilesHash = await hashFiles(dartFiles)
+    dartLockHash = dartFilesHash && `${dartFilesHash}:${dartVersion}`
     if (dartLockHash) await writeFile(dartState, dartLockHash, 'utf8')
   }
 }
@@ -186,20 +241,6 @@ async function isCorsAllowed(backendUrl, frontendPort) {
   return results.every(Boolean)
 }
 
-async function askToOpenBrowser(marker) {
-  if (process.env.LUMI_PROMPT_OPEN !== '1' || !marker || existsSync(marker)) return true
-
-  const prompt = createInterface({ input: stdin, output: stdout })
-  let answer
-  try {
-    answer = await prompt.question('Open Lumi Web App in your default browser? [Y/n] ')
-  } finally {
-    prompt.close()
-  }
-  await writeFile(marker, new Date().toISOString(), 'utf8')
-  return !/^(n|no)$/i.test(answer.trim())
-}
-
 async function reuseRunningApp(appUrl, backendUrl) {
   let page
   try {
@@ -231,19 +272,18 @@ async function main() {
   if (npmVersion.error || npmVersion.status !== 0) throw new Error('npm is required but was not found on PATH.')
 
   const dart = findDartExecutable()
-  checkDart(dart)
+  const dartVersion = checkDart(dart)
   const env = { ...process.env, LUMI_DART_EXECUTABLE: dart }
   const appUrl = `http://127.0.0.1:${port}/`
   const backendUrl = process.env.LUMI_BACKEND_URL ?? 'http://127.0.0.1:8080'
 
   if (await reuseRunningApp(appUrl, backendUrl)) {
     console.log(`Lumi is already running at ${appUrl}`)
-    if (await askToOpenBrowser(process.env.LUMI_SETUP_MARKER)) openDefaultBrowser(appUrl)
-    else console.log(`Lumi is running. Open ${appUrl} in a browser when you want to use it.`)
+    openDefaultBrowser(appUrl)
     return
   }
 
-  await prepareDependencies(dart, env)
+  await prepareDependencies(dart, dartVersion, env)
 
   const webDirectory = resolve(projectRoot, env.LUMI_WEB_DIR ?? 'lumi-web')
   if (!existsSync(join(webDirectory, 'index.html'))) {
@@ -301,9 +341,7 @@ async function main() {
 
     await waitForApp(frontendProcess, appUrl, () => frontendExit)
     console.log(`Lumi's frontend and backend are ready at ${appUrl}`)
-    const openBrowser = await askToOpenBrowser(process.env.LUMI_SETUP_MARKER)
-    if (openBrowser) openDefaultBrowser(appUrl)
-    else console.log(`Lumi is running. Open ${appUrl} in a browser when you want to use it.`)
+    openDefaultBrowser(appUrl)
 
     const result = await frontendExited
     if (result.error) throw result.error
