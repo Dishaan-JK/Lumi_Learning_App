@@ -116,11 +116,6 @@ if (Test-Dart $systemDart) {
   if (-not $dartVersion -or [version]$dartVersion -lt [version]'3.12.0') { throw 'Dart 3.12 or newer is required. Could not find a supported runtime.' }
   $dartHome = Join-Path $runtimeRoot 'dart-sdk'
   $dartExe = Join-Path $dartHome 'bin\dart.exe'
-  $installedDart = $null
-  if (Test-Path $dartExe) {
-    $versionText = (& $dartExe --version 2>&1 | Out-String)
-    if ($versionText -match 'version:\s*(\d+\.\d+\.\d+)') { $installedDart = $Matches[1] }
-  }
   if (-not (Test-Dart $dartExe)) {
     $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("lumi-dart-" + [guid]::NewGuid())
     $archive = Join-Path $tempRoot 'dart.zip'
