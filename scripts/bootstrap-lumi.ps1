@@ -1,4 +1,7 @@
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 may default to TLS 1.0 on older .NET installations;
+# the runtime download hosts require modern HTTPS.
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $dataRoot = Join-Path $env:LOCALAPPDATA 'Lumi'
 $runtimeRoot = Join-Path $dataRoot 'runtime'
@@ -28,8 +31,8 @@ function Get-NodeRelease {
       Where-Object { $_.lts -and $_.version -match '^v\d+\.' } |
       Select-Object -First 1
     if ($release) { return ([string]$release.version).TrimStart([char]'v') }
-  } catch { Write-Host 'Could not check nodejs.org; using the installed Lumi Node.js runtime if available.' }
-  if (Test-Path $nodeState) { return (Get-Content $nodeState -Raw).Trim() }
+  } catch { Write-Warning "Could not check nodejs.org ($($_.Exception.Message)); trying Lumi's cached Node.js version." }
+  if (Test-Path $nodeState) { return [string](Get-Content $nodeState -Raw).Trim() }
   return $null
 }
 
@@ -37,8 +40,8 @@ function Get-DartRelease {
   try {
     $release = Invoke-RestMethod -Uri 'https://storage.googleapis.com/dart-archive/channels/stable/release/latest/VERSION' -TimeoutSec 15
     if ($release.version) { return [string]$release.version }
-  } catch { Write-Host 'Could not check dart.dev; using the installed Lumi Dart runtime if available.' }
-  if (Test-Path $dartState) { return (Get-Content $dartState -Raw).Trim() }
+  } catch { Write-Warning "Could not check dart.dev ($($_.Exception.Message)); trying Lumi's cached Dart version." }
+  if (Test-Path $dartState) { return [string](Get-Content $dartState -Raw).Trim() }
   return $null
 }
 
@@ -81,7 +84,7 @@ if ($npmCommand -and (Test-Node $systemNode)) {
   $nodeVersion = if ($nodeVersionValues.Count -gt 0) { [string]$nodeVersionValues[0] } else { $null }
   $parsedNodeVersion = $null
   if (-not $nodeVersion -or -not [version]::TryParse($nodeVersion, [ref]$parsedNodeVersion) -or $parsedNodeVersion -lt [version]'22.0') {
-    throw "Node.js 22 or newer is required. Could not find a supported runtime."
+    throw "Node.js 22 or newer is required. No valid version was returned by nodejs.org or found in Lumi's cache at '$nodeState'."
   }
   $nodeHome = Join-Path $runtimeRoot "node-v$nodeVersion"
   $nodeExe = Join-Path $nodeHome 'node.exe'
@@ -93,7 +96,7 @@ if ($npmCommand -and (Test-Node $systemNode)) {
       $nodeFile = "node-v$nodeVersion-win-$assetArch.zip"
       $nodeUrl = "https://nodejs.org/dist/v$nodeVersion/$nodeFile"
       Write-Host "Downloading Node.js $nodeVersion for Windows $assetArch..."
-      Invoke-WebRequest -Uri $nodeUrl -OutFile $archive
+      Invoke-WebRequest -Uri $nodeUrl -OutFile $archive -UseBasicParsing
       Expand-Archive -LiteralPath $archive -DestinationPath $tempRoot -Force
       $extracted = Join-Path $tempRoot "node-v$nodeVersion-win-$assetArch"
       Remove-Item -LiteralPath $nodeHome -Recurse -Force -ErrorAction SilentlyContinue
@@ -118,8 +121,14 @@ if (Test-Dart $systemDart) {
   $dartExe = $privateDart
   Write-Host "Using Lumi's private Dart SDK."
 } else {
-  $dartVersion = Get-DartRelease
-  if (-not $dartVersion -or [version]$dartVersion -lt [version]'3.12.0') { throw 'Dart 3.12 or newer is required. Could not find a supported runtime.' }
+  # Normalize release and cache output the same way as Node so collection
+  # responses cannot cause a System.Object[] to System.Version cast failure.
+  $dartVersionValues = @(Get-DartRelease)
+  $dartVersion = if ($dartVersionValues.Count -gt 0) { [string]$dartVersionValues[0] } else { $null }
+  $parsedDartVersion = $null
+  if (-not $dartVersion -or -not [version]::TryParse($dartVersion, [ref]$parsedDartVersion) -or $parsedDartVersion -lt [version]'3.12.0') {
+    throw "Dart 3.12 or newer is required. No valid version was returned by dart.dev or found in Lumi's cache at '$dartState'."
+  }
   $dartHome = Join-Path $runtimeRoot 'dart-sdk'
   $dartExe = Join-Path $dartHome 'bin\dart.exe'
   if (-not (Test-Dart $dartExe)) {
@@ -130,7 +139,7 @@ if (Test-Dart $systemDart) {
       $dartFile = "dartsdk-windows-$assetArch-release.zip"
       $dartUrl = "https://storage.googleapis.com/dart-archive/channels/stable/release/$dartVersion/sdk/$dartFile"
       Write-Host "Downloading Dart $dartVersion for Windows $assetArch..."
-      Invoke-WebRequest -Uri $dartUrl -OutFile $archive
+      Invoke-WebRequest -Uri $dartUrl -OutFile $archive -UseBasicParsing
       Expand-Archive -LiteralPath $archive -DestinationPath $tempRoot -Force
       if (-not (Test-Dart (Join-Path $tempRoot 'dart-sdk\bin\dart.exe'))) { throw 'Downloaded Dart SDK is unusable or older than 3.12.' }
       Remove-Item -LiteralPath $dartHome -Recurse -Force -ErrorAction SilentlyContinue
