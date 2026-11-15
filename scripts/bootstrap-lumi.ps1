@@ -27,7 +27,7 @@ function Get-NodeRelease {
     $release = Invoke-RestMethod -Uri 'https://nodejs.org/dist/index.json' -TimeoutSec 15 |
       Where-Object { $_.lts -and $_.version -match '^v\d+\.' } |
       Select-Object -First 1
-    if ($release) { return $release.version.TrimStart('v') }
+    if ($release) { return ([string]$release.version).TrimStart([char]'v') }
   } catch { Write-Host 'Could not check nodejs.org; using the installed Lumi Node.js runtime if available.' }
   if (Test-Path $nodeState) { return (Get-Content $nodeState -Raw).Trim() }
   return $null
@@ -75,8 +75,14 @@ if ($npmCommand -and (Test-Node $systemNode)) {
   $env:PATH = "$(Split-Path $nodeExe);$env:PATH"
   Write-Host "Using Lumi's private Node.js."
 } else {
-  $nodeVersion = Get-NodeRelease
-  if (-not $nodeVersion -or [version]$nodeVersion -lt [version]'22.0') { throw "Node.js 22 or newer is required. Could not find a supported runtime." }
+  # PowerShell functions enumerate returned collections. Keep only one version
+  # string before casting so an unexpected array response cannot break setup.
+  $nodeVersionValues = @(Get-NodeRelease)
+  $nodeVersion = if ($nodeVersionValues.Count -gt 0) { [string]$nodeVersionValues[0] } else { $null }
+  $parsedNodeVersion = $null
+  if (-not $nodeVersion -or -not [version]::TryParse($nodeVersion, [ref]$parsedNodeVersion) -or $parsedNodeVersion -lt [version]'22.0') {
+    throw "Node.js 22 or newer is required. Could not find a supported runtime."
+  }
   $nodeHome = Join-Path $runtimeRoot "node-v$nodeVersion"
   $nodeExe = Join-Path $nodeHome 'node.exe'
   if (-not (Test-Node $nodeExe)) {
