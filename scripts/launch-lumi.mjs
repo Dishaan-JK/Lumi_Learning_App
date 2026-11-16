@@ -11,13 +11,17 @@ const isWindows = process.platform === 'win32'
 const npm = isWindows ? 'npm.cmd' : 'npm'
 const port = Number(process.env.LUMI_FRONTEND_PORT ?? 5173)
 
+function needsWindowsShell(command) {
+  return isWindows && /\.(?:cmd|bat)$/i.test(command)
+}
+
 function run(command, args, { cwd = projectRoot, env = process.env } = {}) {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(command, args, {
       cwd,
       env,
       stdio: 'inherit',
-      shell: isWindows,
+      shell: needsWindowsShell(command),
     })
     child.once('error', rejectRun)
     child.once('exit', (code, signal) => {
@@ -31,7 +35,7 @@ function capture(command, args) {
   return spawnSync(command, args, {
     cwd: projectRoot,
     encoding: 'utf8',
-    shell: isWindows,
+    shell: needsWindowsShell(command),
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 }
@@ -55,6 +59,7 @@ function checkDart(dart) {
     throw new Error(`Could not run Dart (${dart}). Install Dart 3.12 or newer, or set LUMI_DART_EXECUTABLE to its executable path.`)
   }
   const match = versionOutput.match(/Dart SDK version:\s*(\d+)\.(\d+)\.(\d+)/i)
+  if (!match) throw new Error(`Could not read the Dart version from (${dart}). Check that LUMI_DART_EXECUTABLE points to a Dart SDK executable.`)
   if (match && (Number(match[1]) < 3 || (Number(match[1]) === 3 && Number(match[2]) < 12))) {
     throw new Error(`Dart 3.12 or newer is required; found ${match[1]}.${match[2]}.${match[3]}.`)
   }
@@ -274,7 +279,7 @@ async function main() {
   const dart = findDartExecutable()
   const dartVersion = checkDart(dart)
   const env = { ...process.env, LUMI_DART_EXECUTABLE: dart }
-  const appUrl = `http://127.0.0.1:${port}/`
+  const appUrl = `http://127.0.0.1:${port}/${process.env.LUMI_FACTORY_RESET === '1' ? '?lumi-reset=1' : ''}`
   const backendUrl = process.env.LUMI_BACKEND_URL ?? 'http://127.0.0.1:8080'
 
   if (await reuseRunningApp(appUrl, backendUrl)) {

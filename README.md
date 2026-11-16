@@ -75,6 +75,9 @@ On the first run, Lumi checks for usable runtimes, downloads any that are
 missing, prepares the React and backend packages, and checks
 that both parts of the app start. You do not need to install Node.js, Dart,
 npm packages, or other app packages yourself.
+On Windows, the private runtimes are stored in your Local AppData folder and
+`LUMI_DART_EXECUTABLE` is set for Lumi automatically; administrator access is
+not required.
 This can take a few minutes. Once both services are ready, Lumi opens the app
 in your default browser at
 [`http://127.0.0.1:5173`](http://127.0.0.1:5173).
@@ -89,6 +92,22 @@ open a new terminal after the first run, then type `lumi install` or `lumi` to s
 open the app in your browser. On Windows, open a new Command Prompt and type
 `lumi install` or `lumi`. Each later `lumi` command starts the frontend and backend and opens the
 browser automatically.
+
+On Windows, these maintenance commands are also available from a new terminal:
+
+```powershell
+lumi uninstall-packages
+lumi install
+lumi factory-reset
+```
+
+`uninstall-packages` removes Lumi's private Node.js/Dart runtimes and downloaded
+project dependencies, while keeping Lumi and its workspace data. It never
+uninstalls system-wide Node.js or Dart. `install` downloads missing runtimes and
+rebuilds dependencies, then starts Lumi. `factory-reset` asks you to type
+`RESET`, deletes Lumi workspace data and settings, clears local browser UI state,
+then starts a clean Lumi session. Close Lumi before running the reset. These
+commands do not remove software unrelated to Lumi.
 
 After the first setup, run `lumi` from any folder in a new terminal to reopen
 the same workspace. Lumi restores the last workspace view in the same browser;

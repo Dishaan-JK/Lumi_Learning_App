@@ -10,6 +10,111 @@ $runtimeRoot = Join-Path $dataRoot 'runtime'
 $nodeState = Join-Path $runtimeRoot 'node-version.txt'
 $dartState = Join-Path $runtimeRoot 'dart-version.txt'
 $webRoot = Join-Path $projectRoot 'dist'
+$commandName = if ($args.Count -gt 0) { ([string]$args[0]).ToLowerInvariant() } else { 'start' }
+
+if ($commandName -in @('help', '--help', '-h', '/?')) {
+    @'
+Lumi commands
+
+  lumi                 Start Lumi
+  lumi install         Install or repair Lumi's runtimes and packages, then start it
+  lumi uninstall-packages
+                       Remove Lumi-managed runtimes and downloaded project packages
+                       System-wide Node.js and Dart installations are not removed
+  lumi factory-reset   Delete Lumi workspace data and settings, then start clean
+                       Requires typing RESET; Lumi must be closed first
+  lumi help            Show this help
+'@ | Write-Host
+    exit 0
+}
+
+if ($commandName -eq 'uninstall-packages') {
+    Write-Host 'This removes Lumi-managed runtimes and downloaded project packages. System-wide Node.js and Dart installations are left alone.'
+    if ((Read-Host 'Type REMOVE to continue') -cne 'REMOVE') {
+        Write-Host 'Cancelled.'
+        exit 1
+    }
+
+    $removePaths = @(
+        $runtimeRoot,
+        (Join-Path $projectRoot 'node_modules'),
+        (Join-Path $projectRoot 'backend\.dart_tool')
+    )
+    foreach ($path in $removePaths) {
+        if (Test-Path -LiteralPath $path) {
+            Remove-Item -LiteralPath $path -Recurse -Force
+            Write-Host "Removed $path"
+        }
+    }
+    Write-Host 'Lumi remains installed. Run "lumi install" to download runtimes and packages again.' -ForegroundColor Green
+    exit 0
+}
+
+if ($commandName -eq 'factory-reset') {
+    $accountData = [IO.Path]::GetFullPath($dataRoot)
+    $legacyData = [IO.Path]::GetFullPath((Join-Path $projectRoot 'backend\.data'))
+    $customData = if ($env:LUMI_DATA_DIR) { [IO.Path]::GetFullPath($env:LUMI_DATA_DIR) } else { $null }
+    if ($customData -and $customData -ne $legacyData) {
+        $projectPath = [IO.Path]::GetFullPath($projectRoot).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        $projectDataPath = $customData.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        if (
+            $customData -eq [IO.Path]::GetPathRoot($customData) -or
+            $customData -eq $projectPath.TrimEnd([IO.Path]::DirectorySeparatorChar) -or
+            $customData.StartsWith($projectPath, [StringComparison]::OrdinalIgnoreCase) -or
+            $projectPath.StartsWith($projectDataPath, [StringComparison]::OrdinalIgnoreCase)
+        ) {
+            throw "Refusing to factory-reset the unsafe LUMI_DATA_DIR path '$customData'. Choose a dedicated Lumi data folder outside the project and user/system folders."
+        }
+    }
+    $targets = @($accountData, $legacyData)
+    if ($customData -and $customData -ne $accountData -and $customData -ne $legacyData) {
+        $targets += $customData
+    }
+
+    Write-Host 'Factory reset removes Lumi workspace files, settings, provider configuration, and browser-local UI state.' -ForegroundColor Yellow
+    Write-Host 'It keeps Lumi, its private runtimes, and the command-line launcher.'
+    Write-Host "Data locations: $($targets -join ', ')"
+    if ((Read-Host 'Type RESET to permanently delete this Lumi data') -cne 'RESET') {
+        Write-Host 'Cancelled.'
+        exit 1
+    }
+
+    $portsToCheck = @(8080, 5173)
+    if ($env:LUMI_BACKEND_URL) { try { $portsToCheck += ([Uri]$env:LUMI_BACKEND_URL).Port } catch { } }
+    if ($env:LUMI_FRONTEND_PORT) { try { $portsToCheck += [int]$env:LUMI_FRONTEND_PORT } catch { } }
+    foreach ($port in @($portsToCheck | Sort-Object -Unique)) {
+        $client = New-Object System.Net.Sockets.TcpClient
+        try {
+            $pending = $client.BeginConnect('127.0.0.1', [int]$port, $null, $null)
+            if ($pending.AsyncWaitHandle.WaitOne(250)) {
+                try {
+                    $client.EndConnect($pending)
+                    throw "A local service is using port $port. Close Lumi and run the factory reset again. No data was deleted."
+                }
+                catch [System.Net.Sockets.SocketException] { }
+            }
+        }
+        finally { $client.Close() }
+    }
+
+    foreach ($target in $targets) {
+        if (-not (Test-Path -LiteralPath $target)) { continue }
+        if ($target -eq $accountData) {
+            Get-ChildItem -LiteralPath $target -Force |
+                Where-Object { $_.Name -notin @('runtime', 'bin') } |
+                Remove-Item -Recurse -Force
+        }
+        else {
+            Remove-Item -LiteralPath $target -Recurse -Force
+        }
+        Write-Host "Reset $target"
+    }
+    $env:LUMI_FACTORY_RESET = '1'
+    Write-Host 'Lumi data reset. Starting Lumi with a clean browser state...' -ForegroundColor Green
+}
+elseif ($commandName -notin @('start', 'install')) {
+    throw 'Usage: lumi [install | uninstall-packages | factory-reset]'
+}
 
 $banner = @'
   _     _   _ __  __ ___

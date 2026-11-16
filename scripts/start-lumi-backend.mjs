@@ -9,6 +9,7 @@ const backendUrl = process.env.LUMI_BACKEND_URL ?? 'http://127.0.0.1:8080'
 const frontendPort = process.env.LUMI_FRONTEND_PORT ?? '5173'
 const localDevOrigins = `http://127.0.0.1:${frontendPort},http://localhost:${frontendPort}`
 const dart = process.env.LUMI_DART_EXECUTABLE ?? 'dart'
+const dartNeedsShell = process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(dart)
 const legacyData = join(backendRoot, '.data')
 const accountData = process.platform === 'win32'
   ? join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'Lumi')
@@ -34,7 +35,7 @@ if (await isReachable()) {
 }
 
 if (!existsSync(join(backendRoot, '.dart_tool/package_config.json'))) {
-  const setup = spawn(dart, ['pub', 'get'], { cwd: backendRoot, stdio: 'inherit' })
+  const setup = spawn(dart, ['pub', 'get'], { cwd: backendRoot, stdio: 'inherit', shell: dartNeedsShell })
   const code = await new Promise((resolve) => setup.on('exit', resolve))
   if (code !== 0) throw new Error('Could not prepare the bundled Lumi backend dependencies with dart pub get.')
 }
@@ -50,6 +51,7 @@ const child = spawn(dart, ['run', 'bin/server.dart'], {
     LUMI_ALLOWED_ORIGINS: process.env.LUMI_ALLOWED_ORIGINS ?? localDevOrigins,
   },
   stdio: 'inherit',
+  shell: dartNeedsShell,
 })
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
