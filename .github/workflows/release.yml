@@ -63,6 +63,8 @@ jobs:
           pattern: lumi-*
           path: release
           merge-multiple: true
+      - name: Package flat source ZIP
+        run: git archive --format=zip --output=release/lumi-source.zip HEAD
       - run: cp scripts/install.sh scripts/install.ps1 release/
       - env:
           GH_TOKEN: ${{ github.token }}

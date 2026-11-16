@@ -64,9 +64,14 @@ The terminal shows the detected OS, each setup step and package download, the
 app URL, and the controls. It opens the browser when Lumi is ready. Keep the
 terminal open; press **Ctrl+C** to stop Lumi and see the exit message.
 
-Alternatively, [download the project ZIP](https://github.com/Dishaan-JK/Lumi_Learning_App/archive/refs/heads/React_v.zip),
-extract it, and double-click `Lumi.bat` on Windows or run `sh Lumi.sh` from the
-extracted folder on Linux. Keep the entire project folder together.
+For a ZIP with no extra repository folder inside it, download
+[`lumi-source.zip` from the latest release](https://github.com/Dishaan-JK/Lumi_Learning_App/releases/latest/download/lumi-source.zip).
+The release workflow puts project files at the ZIP root, so Windows **Extract
+All** creates one Lumi folder containing `Lumi.bat`, `scripts`, and the other
+project files. GitHub's **Code → Download ZIP** branch archive has its own
+repository folder inside; extracting that into a same-named folder creates the
+nested layout. Use the clone instructions above if `lumi-source.zip` is not yet
+available on the latest release.
 
 The source launcher supports Linux and Windows. macOS users need a macOS
 release build; the source launcher does not yet set up macOS.
