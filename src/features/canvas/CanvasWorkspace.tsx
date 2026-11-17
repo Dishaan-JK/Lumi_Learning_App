@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Hand, Link2, Minus, Plus, Search, X } from 'lucide-react'
+import { ArrowUp, Hand, Link2, LocateFixed, Minus, Plus, Search, X } from 'lucide-react'
 import { createCanvas, getCanvases, lumiQueryKeys, updateCanvas, type LumiCanvas, type LumiCanvasConnection, type LumiCanvasPosition, type LumiNote } from '../../lib/lumi-api'
 
 const WORLD_WIDTH = 3200
@@ -10,8 +10,10 @@ const MIN_NOTE_WIDTH = 220
 const MIN_NOTE_HEIGHT = 156
 const MAX_NOTE_WIDTH = 1_200
 const MAX_NOTE_HEIGHT = 900
+const NOTE_ACCENTS = ['#B66C52', '#71836A', '#7189A6', '#A78A4D', '#9279A4']
 const clampZoom = (value: number) => Math.min(2.25, Math.max(.4, value))
 const defaultPosition = (index: number): LumiCanvasPosition => ({ x: 120 + (index % 3) * 390, y: 130 + Math.floor(index / 3) * 270 })
+const noteAccent = (id: string) => NOTE_ACCENTS[[...id].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) >>> 0, 0) % NOTE_ACCENTS.length]
 type CanvasNoteSize = { width: number; height: number }
 
 function readCanvasNoteSizes(canvasId: string): Record<string, CanvasNoteSize> {
@@ -88,6 +90,7 @@ function CanvasBoard({ canvas, notes, onOpenNote, onCreateNote }: { canvas: Lumi
   const [addingNotes, setAddingNotes] = useState(false)
   const [search, setSearch] = useState('')
   const [palettePosition, setPalettePosition] = useState<{ x: number; y: number } | null>(null)
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
   const update = useMutation({
     mutationFn: (changes: Parameters<typeof updateCanvas>[1]) => updateCanvas(canvas.id, changes),
     onSuccess: (updated) => client.setQueryData<LumiCanvas[]>(lumiQueryKeys.canvases, (items) => items?.map((item) => item.id === updated.id ? updated : item)),
@@ -96,6 +99,14 @@ function CanvasBoard({ canvas, notes, onOpenNote, onCreateNote }: { canvas: Lumi
   const availableNotes = notes.filter((note) => !noteIds.includes(note.id) && (note.title + ' ' + note.content).toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
 
   useEffect(() => { zoomRef.current = zoom }, [zoom])
+
+  useEffect(() => {
+    const element = viewportRef.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) => setViewportSize({ width: entry.contentRect.width, height: entry.contentRect.height }))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     const element = viewportRef.current
@@ -216,8 +227,53 @@ function CanvasBoard({ canvas, notes, onOpenNote, onCreateNote }: { canvas: Lumi
     try { localStorage.setItem(`lumi-canvas-note-sizes:${canvas.id}`, JSON.stringify(noteSizesRef.current)) } catch { /* keep the current layout for this session */ }
   }
 
+  function centerOnNote(id: string) {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const position = positions[id] ?? defaultPosition(noteIds.indexOf(id))
+    const size = noteSizes[id] ?? { width: window.innerWidth <= 760 ? 270 : 320, height: 156 }
+    setPan({
+      x: viewport.clientWidth / 2 - (position.x + size.width / 2) * zoom,
+      y: viewport.clientHeight / 2 - (position.y + size.height / 2) * zoom,
+    })
+  }
+
+  function centerCanvas() {
+    if (selectedNoteId && noteIds.includes(selectedNoteId)) {
+      centerOnNote(selectedNoteId)
+      return
+    }
+    const viewport = viewportRef.current
+    if (!viewport) return
+    if (!noteIds.length) {
+      setPan({ x: viewport.clientWidth / 2 - WORLD_WIDTH / 2 * zoom, y: viewport.clientHeight / 2 - WORLD_HEIGHT / 2 * zoom })
+      return
+    }
+    const bounds = noteIds.reduce((rect, id, index) => {
+      const point = positions[id] ?? defaultPosition(index)
+      const size = noteSizes[id] ?? { width: window.innerWidth <= 760 ? 270 : 320, height: 156 }
+      return { left: Math.min(rect.left, point.x), top: Math.min(rect.top, point.y), right: Math.max(rect.right, point.x + size.width), bottom: Math.max(rect.bottom, point.y + size.height) }
+    }, { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity })
+    setPan({ x: viewport.clientWidth / 2 - (bounds.left + bounds.right) / 2 * zoom, y: viewport.clientHeight / 2 - (bounds.top + bounds.bottom) / 2 * zoom })
+  }
+
+  const selectedIndex = selectedNoteId ? noteIds.indexOf(selectedNoteId) : -1
+  const selectedPosition = selectedIndex >= 0 ? positions[selectedNoteId!] ?? defaultPosition(selectedIndex) : null
+  const selectedSize = selectedNoteId ? noteSizes[selectedNoteId] ?? { width: window.innerWidth <= 760 ? 270 : 320, height: 156 } : null
+  const viewportWidth = viewportSize.width
+  const viewportHeight = viewportSize.height
+  const selectedScreenPoint = selectedPosition && selectedSize ? { x: pan.x + (selectedPosition.x + selectedSize.width / 2) * zoom, y: pan.y + (selectedPosition.y + selectedSize.height / 2) * zoom } : null
+  const selectedIsOffscreen = Boolean(selectedScreenPoint && (selectedScreenPoint.x < 0 || selectedScreenPoint.x > viewportWidth || selectedScreenPoint.y < 0 || selectedScreenPoint.y > viewportHeight))
+  const offscreenCue = selectedIsOffscreen && selectedScreenPoint && viewportWidth > 0 && viewportHeight > 0 ? (() => {
+    const dx = selectedScreenPoint.x - viewportWidth / 2
+    const dy = selectedScreenPoint.y - viewportHeight / 2
+    const inset = 34
+    const scale = Math.min((viewportWidth / 2 - inset) / Math.max(1, Math.abs(dx)), (viewportHeight / 2 - inset) / Math.max(1, Math.abs(dy)))
+    return { x: viewportWidth / 2 + dx * scale, y: viewportHeight / 2 + dy * scale, angle: Math.atan2(dy, dx) * 180 / Math.PI + 90 }
+  })() : null
+
   return <div className="canvas-board-shell">
-    <div ref={viewportRef} className={`canvas-board ${panMode ? 'is-pan-mode' : ''} ${isPanning ? 'is-panning' : ''}`} aria-label={`${canvas.title} board`} onPointerDown={(event) => { const target = event.target as HTMLElement; if ((panMode || event.shiftKey) && event.button === 0 && !target.closest('.canvas-tool-palette, .canvas-add-popover, .canvas-note-remove')) { panRef.current = { pointerX: event.clientX, pointerY: event.clientY, startX: pan.x, startY: pan.y }; setIsPanning(true); event.preventDefault() } }}>
+    <div ref={viewportRef} className={`canvas-board ${panMode ? 'is-pan-mode' : ''} ${isPanning ? 'is-panning' : ''}`} aria-label={`${canvas.title} board`} onPointerDown={(event) => { const target = event.target as HTMLElement; if ((panMode || event.shiftKey) && event.button === 0 && !target.closest('.canvas-tool-palette, .canvas-add-popover, .canvas-note-remove, .canvas-offscreen-cue')) { panRef.current = { pointerX: event.clientX, pointerY: event.clientY, startX: pan.x, startY: pan.y }; setIsPanning(true); event.preventDefault() } }}>
       <div className="canvas-world" style={{ width: WORLD_WIDTH, height: WORLD_HEIGHT, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
         <svg className="canvas-edges" width={WORLD_WIDTH} height={WORLD_HEIGHT} aria-label="Note connections">
           <defs><marker id="canvas-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path className="canvas-arrow-head" d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
@@ -229,7 +285,7 @@ function CanvasBoard({ canvas, notes, onOpenNote, onCreateNote }: { canvas: Lumi
             return <path className="canvas-edge-path" key={`${edge.sourceId}:${edge.targetId}`} d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`} markerEnd="url(#canvas-arrow)" />
           })}
         </svg>
-        {attachedNotes.map(({ id, note, position }) => <article className={`canvas-note ${noteSizes[id] ? 'is-resized' : ''} ${selectedNoteId === id ? 'is-selected' : ''} ${connectFrom === id ? 'is-connect-source' : ''}`} key={id} style={{ left: position.x, top: position.y, width: noteSizes[id]?.width, height: noteSizes[id]?.height }} onPointerDown={(event) => startMove(event, id)} onPointerMove={(event) => moveNode(event, id)} onPointerUp={() => finishMove(id)} onClick={(event) => { if ((event.target as HTMLElement).closest('button')) return; if (connectMode) connect(connectFrom ? 'target' : 'source', id); else setSelectedNoteId(id) }} onDoubleClick={(event) => { if ((event.target as HTMLElement).closest('button') || connectMode || panMode) return; onOpenNote(id) }}>
+        {attachedNotes.map(({ id, note, position }) => <article className={`canvas-note ${noteSizes[id] ? 'is-resized' : ''} ${selectedNoteId === id ? 'is-selected' : ''} ${connectFrom === id ? 'is-connect-source' : ''}`} key={id} style={{ left: position.x, top: position.y, width: noteSizes[id]?.width, height: noteSizes[id]?.height, '--note-accent': noteAccent(id) } as CSSProperties} onPointerDown={(event) => startMove(event, id)} onPointerMove={(event) => moveNode(event, id)} onPointerUp={() => finishMove(id)} onClick={(event) => { if ((event.target as HTMLElement).closest('button')) return; if (connectMode) connect(connectFrom ? 'target' : 'source', id); else setSelectedNoteId(id) }} onDoubleClick={(event) => { if ((event.target as HTMLElement).closest('button') || connectMode || panMode) return; setSelectedNoteId(id); onOpenNote(id) }}>
           <button className="canvas-note-remove" type="button" aria-label={`Remove ${note?.title || 'note'} from canvas`} title="Remove from canvas" onClick={() => removeNote(id)}><X aria-hidden="true" /></button>
           <span className="canvas-note-label">Note</span>
           <button className="canvas-note-title" type="button" onClick={() => connectMode ? connect(connectFrom ? 'target' : 'source', id) : panMode ? undefined : onOpenNote(id)} onDoubleClick={(event) => { event.stopPropagation(); if (!connectMode && !panMode) onOpenNote(id) }}>{note?.title || 'Untitled note'}</button>
@@ -237,11 +293,14 @@ function CanvasBoard({ canvas, notes, onOpenNote, onCreateNote }: { canvas: Lumi
           <button className="canvas-note-resize" type="button" aria-label={`Resize ${note?.title || 'note'}`} title="Drag to resize note" onPointerDown={(event) => startResize(event, id)} onPointerMove={resizeNote} onPointerUp={finishResize} onPointerCancel={finishResize} onLostPointerCapture={finishResize}><span aria-hidden="true" /></button>
         </article>)}
       </div>
+      {offscreenCue && selectedNoteId && <button className="canvas-offscreen-cue" type="button" style={{ left: offscreenCue.x, top: offscreenCue.y, '--note-accent': noteAccent(selectedNoteId) } as CSSProperties} aria-label={`Center ${attachedNotes.find((item) => item.id === selectedNoteId)?.note?.title || 'selected note'}`} title="Go to selected note" onClick={() => centerOnNote(selectedNoteId)}><ArrowUp aria-hidden="true" style={{ transform: `rotate(${offscreenCue.angle}deg)` }} /><span aria-hidden="true" /></button>}
       {noteIds.length === 0 && <div className="canvas-empty-state"><span className="canvas-empty-orb"><Plus aria-hidden="true" /></span><strong>A clear space for your ideas</strong><span>Add notes from the floating panel, then connect related thoughts.</span></div>}
       <div className="canvas-tool-palette" style={palettePosition ? { left: palettePosition.x, top: palettePosition.y, right: 'auto' } : undefined} aria-label="Canvas controls">
         <div className="canvas-palette-grip" title="Drag to move the controls" onPointerDown={(event) => { paletteDragRef.current = { pointerX: event.clientX, pointerY: event.clientY, startX: palettePosition?.x ?? Math.max(16, (viewportRef.current?.clientWidth ?? 600) - 80), startY: palettePosition?.y ?? 18 }; event.preventDefault() }}><span /><span /><span /><span /><span /><span /></div>
         <button type="button" className={addingNotes ? 'is-active' : ''} aria-label="Add notes to canvas" title="Add notes" onClick={() => { setAddingNotes((value) => !value); setSearch('') }}><Plus aria-hidden="true" /></button>
         <button type="button" className={connectMode ? 'is-active' : ''} aria-label={connectMode ? 'Exit connection mode' : 'Connect notes'} title={connectMode ? 'Exit connection mode' : 'Connect notes'} onClick={() => { if (connectMode) { setConnectMode(false); setConnectFrom(null) } else { setPanMode(false); setConnectMode(true); setConnectFrom(selectedNoteId) } }}><Link2 aria-hidden="true" /></button>
+        <span className="canvas-palette-divider" />
+        <button type="button" aria-label={selectedNoteId ? 'Center selected note' : 'Center canvas'} title={selectedNoteId ? 'Center selected note' : 'Center canvas'} onClick={centerCanvas}><LocateFixed aria-hidden="true" /></button>
         <span className="canvas-palette-divider" />
         <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => setZoom((value) => clampZoom(value / 1.15))}><Minus aria-hidden="true" /></button>
         <span className="canvas-zoom-readout" aria-live="polite">{Math.round(zoom * 100)}%</span>

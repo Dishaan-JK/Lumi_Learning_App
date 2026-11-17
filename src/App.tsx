@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BookOpen,
@@ -25,12 +25,13 @@ import { SearchDialog } from './features/search/SearchDialog'
 import { ArtifactsLibrary } from './features/artifacts/ArtifactsLibrary'
 import { SettingsWorkspace } from './features/settings/SettingsWorkspace'
 import { CoachPanel } from './features/coach/CoachPanel'
-import { RECENT_CHATS_UPDATED_EVENT, readRecentChats, type RecentChat } from './features/coach/recent-chats'
+import { RECENT_CHATS_UPDATED_EVENT, isSessionId, readRecentChats, type RecentChat } from './features/coach/recent-chats'
 import { RecentChatRow } from './features/coach/RecentChatRow'
 import { StudentOnboarding } from './features/profile/StudentOnboarding'
 import { hasStudentProfile } from './features/profile/student-profile'
 import { HomeWorkspace } from './features/home/HomeWorkspace'
 import { useWorkspaceNavigation, type WorkspaceView } from './features/navigation/workspace-navigation'
+import { persistWorkspaceTabs, readWorkspaceTabs, workspaceTabKey, type NoteOrigin, type WorkspaceTab } from './features/navigation/workspace-tabs'
 import { PanelWidthSlider } from './features/layout/PanelWidthSlider'
 import { LAYOUT_WIDTHS_UPDATED_EVENT, readLayoutWidths } from './lib/layout-widths'
 import { useFocusMode } from './features/focus/useFocusMode'
@@ -73,9 +74,15 @@ function App() {
   const [coachPresentation, setCoachPresentation] = useState<'main' | 'side'>('main')
   const [recentChats, setRecentChats] = useState<RecentChat[]>(readRecentChats)
   const [coachSessionRequest, setCoachSessionRequest] = useState<{ sessionId: string; request: number } | null>(null)
+  const [activeCoachSessionId, setActiveCoachSessionId] = useState<string | null>(() => {
+    const stored = localStorage.getItem('lumi.chat.session./api/assistant')
+    return isSessionId(stored) ? stored : null
+  })
+  const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>(readWorkspaceTabs)
   const [isSearchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved')
+  const onCoachSessionChange = useCallback((sessionId: string | null) => setActiveCoachSessionId(sessionId), [])
   useEffect(() => {
     const refreshRecentChats = () => setRecentChats(readRecentChats())
     window.addEventListener(RECENT_CHATS_UPDATED_EVENT, refreshRecentChats)
@@ -176,9 +183,78 @@ function App() {
   }, [selectedFolderId, workspace.data?.notes])
 
   const selectedNote = useMemo(
-    () => visibleNotes.find((note) => note.id === selectedNoteId) ?? visibleNotes[0],
-    [selectedNoteId, visibleNotes],
+    () => (selectedNoteId ? workspace.data?.notes.find((note) => note.id === selectedNoteId) : undefined) ?? visibleNotes[0],
+    [selectedNoteId, visibleNotes, workspace.data?.notes],
   )
+
+  function registerWorkspaceTab(tab: WorkspaceTab) {
+    setWorkspaceTabs((current) => {
+      const key = workspaceTabKey(tab)
+      const existing = current.find((item) => workspaceTabKey(item) === key)
+      const nextTab = tab.type === 'note' && !tab.origin && existing?.type === 'note' && existing.origin ? { ...tab, origin: existing.origin } : tab
+      const existingIndex = current.findIndex((item) => workspaceTabKey(item) === key)
+      const next = existingIndex >= 0
+        ? current.map((item, index) => index === existingIndex ? nextTab : item)
+        : [...current, nextTab].slice(-32)
+      persistWorkspaceTabs(next)
+      return next
+    })
+  }
+
+  function openWorkspaceNote(noteId: string, origin?: NoteOrigin) {
+    const target = workspace.data?.notes.find((item) => item.id === noteId)
+    registerWorkspaceTab({ type: 'note', id: noteId, ...(origin ? { origin } : {}) })
+    navigate('notes', { noteId, folderId: target?.folderId ?? null })
+    setSaveStatus('saved')
+  }
+
+  function openWorkspaceCanvas(canvasId: string) {
+    registerWorkspaceTab({ type: 'canvas', id: canvasId })
+    navigate('canvas', { fileId: canvasId })
+  }
+
+  function activateWorkspaceTab(tab: WorkspaceTab) {
+    if (tab.type === 'canvas') openWorkspaceCanvas(tab.id)
+    else {
+      const target = workspace.data?.notes.find((item) => item.id === tab.id)
+      navigate('notes', { noteId: tab.id, folderId: target?.folderId ?? null })
+    }
+  }
+
+  function closeWorkspaceTab(tab: WorkspaceTab) {
+    const next = workspaceTabs.filter((item) => workspaceTabKey(item) !== workspaceTabKey(tab))
+    persistWorkspaceTabs(next)
+    setWorkspaceTabs(next)
+    const activeKey = route.view === 'notes' && route.noteId ? `note:${route.noteId}` : route.view === 'canvas' && route.fileId ? `canvas:${route.fileId}` : null
+    if (activeKey !== workspaceTabKey(tab)) return
+    const fallback = next.at(-1)
+    if (fallback) activateWorkspaceTab(fallback)
+    else if (tab.type === 'note') navigate('notes')
+    else navigate('canvas')
+  }
+
+  const activeWorkspaceTab = route.view === 'notes' && route.noteId
+    ? workspaceTabs.find((tab) => tab.type === 'note' && tab.id === route.noteId)
+    : route.view === 'canvas' && route.fileId
+      ? workspaceTabs.find((tab) => tab.type === 'canvas' && tab.id === route.fileId)
+      : undefined
+  const activeNoteOrigin = activeWorkspaceTab?.type === 'note' ? activeWorkspaceTab.origin : undefined
+
+  useEffect(() => {
+    if (route.view === 'notes' && selectedNoteId && workspace.data?.notes.some((item) => item.id === selectedNoteId)) registerWorkspaceTab({ type: 'note', id: selectedNoteId })
+    if (route.view === 'canvas' && selectedCanvas) registerWorkspaceTab({ type: 'canvas', id: selectedCanvas.id })
+  }, [route.view, selectedNoteId, selectedCanvas?.id, workspace.data?.notes])
+
+  useEffect(() => {
+    if (!workspace.data || !canvases.data) return
+    const next = workspaceTabs.filter((tab) => tab.type === 'note'
+      ? workspace.data!.notes.some((note) => note.id === tab.id)
+      : canvases.data!.some((canvas) => canvas.id === tab.id))
+    if (next.length !== workspaceTabs.length) {
+      persistWorkspaceTabs(next)
+      setWorkspaceTabs(next)
+    }
+  }, [workspace.data, canvases.data, workspaceTabs])
   const allFolders = workspace.data?.folders ?? []
   const folderCreationParentId = allFolders.some((folder) => folder.id === newFolderParentId) ? newFolderParentId : ''
   const childFolderIds = (parentId: string): Set<string> => {
@@ -299,7 +375,7 @@ function App() {
               [...recentChats]
                 .sort((a, b) => recentChatTime(b) - recentChatTime(a))
                 .slice(0, Math.min(20, Math.max(1, Number(preferences.data?.recentLimit ?? 12))))
-                .map((chat) => <RecentChatRow key={chat.sessionId} chat={chat} selected={isCoachOpen && coachSessionRequest?.sessionId === chat.sessionId} onOpen={() => { setCoachSessionRequest((current) => ({ sessionId: chat.sessionId, request: (current?.request ?? 0) + 1 })); setCoachPresentation('main'); setCoachOpen(true); setNavigationOpen(false) }} onDeleted={() => setCoachSessionRequest((current) => current?.sessionId === chat.sessionId ? null : current)} />)
+                .map((chat) => <RecentChatRow key={chat.sessionId} chat={chat} selected={isCoachOpen && activeCoachSessionId === chat.sessionId} onOpen={() => { setCoachSessionRequest((current) => ({ sessionId: chat.sessionId, request: (current?.request ?? 0) + 1 })); setActiveCoachSessionId(chat.sessionId); setCoachPresentation('main'); setCoachOpen(true); setNavigationOpen(false) }} onDeleted={() => { setCoachSessionRequest((current) => current?.sessionId === chat.sessionId ? null : current); setActiveCoachSessionId((current) => current === chat.sessionId ? null : current) }} />)
             ) : (
               <p className="nav-empty">Your recent Coach chats will appear here.</p>
             )}
@@ -316,10 +392,22 @@ function App() {
 
       <main className={`workspace-main ${view === 'canvas' && route.fileId ? 'is-canvas-file-main' : ''}`}>
         <header className="workspace-topbar">
-          {view === 'artifacts' && route.artifactId ? <div className="artifact-open-tab" role="group" aria-label="Open artifact"><BookOpen aria-hidden="true" /><span>{openedArtifact?.title ?? 'Opening artifact…'}</span><button type="button" className="artifact-tab-close" aria-label="Close artifact" title="Close artifact" onClick={() => navigate('artifacts', {}, true)}><X aria-hidden="true" /></button></div> : view === 'canvas' && route.fileId ? <div className="artifact-open-tab" role="group" aria-label="Open canvas"><PanelRightClose aria-hidden="true" /><span>{selectedCanvas?.title ?? 'Opening canvas…'}</span><button type="button" className="artifact-tab-close" aria-label="Close canvas" title="Close canvas" onClick={() => navigate('canvas', {}, true)}><X aria-hidden="true" /></button></div> : <div className={`crumbs ${view === 'canvas' && route.fileId ? 'canvas-file-crumb' : ''}`} aria-label="Current location">
-            {!(view === 'canvas' && route.fileId) && <><span>Workspace</span><ChevronRight aria-hidden="true" /></>}
-            <strong>{view === 'notes' ? displayTitle(selectedNote ?? { title: 'Notes' } as LumiNote) : view === 'canvas' && selectedCanvas ? selectedCanvas.title : navItems.find((item) => item.view === view)?.label ?? 'Settings'}</strong>
-          </div>}
+          <div className="workspace-topbar-leading">
+            <nav className="workspace-location" aria-label="Current location">
+              {activeNoteOrigin ? <>
+                {activeNoteOrigin.type === 'canvas' ? <button type="button" onClick={() => openWorkspaceCanvas(activeNoteOrigin.id)}>{canvases.data?.find((item) => item.id === activeNoteOrigin.id)?.title ?? 'Canvas'}</button> : <button type="button" onClick={() => navigate('artifacts')}>Artifacts</button>}
+                <ChevronRight aria-hidden="true" />
+                <strong>{displayTitle(selectedNote ?? { title: 'Note' } as LumiNote)}</strong>
+              </> : <><span>Workspace</span><ChevronRight aria-hidden="true" /><strong>{view === 'notes' ? displayTitle(selectedNote ?? { title: 'Notes' } as LumiNote) : view === 'canvas' && selectedCanvas ? selectedCanvas.title : view === 'artifacts' && openedArtifact ? openedArtifact.title : navItems.find((item) => item.view === view)?.label ?? 'Settings'}</strong></>}
+              {view === 'artifacts' && route.artifactId && <button type="button" className="artifact-tab-close" aria-label="Close artifact" title="Close artifact" onClick={() => navigate('artifacts', {}, true)}><X aria-hidden="true" /></button>}
+            </nav>
+            {workspaceTabs.length > 0 && <nav className="workspace-document-tabs" role="tablist" aria-label="Open notes and canvases">{workspaceTabs.map((tab) => {
+              const active = activeWorkspaceTab && workspaceTabKey(activeWorkspaceTab) === workspaceTabKey(tab)
+              const title = tab.type === 'note' ? workspace.data?.notes.find((item) => item.id === tab.id)?.title || 'Untitled note' : canvases.data?.find((item) => item.id === tab.id)?.title || 'Canvas'
+              const Icon = tab.type === 'note' ? FileText : PanelRightClose
+              return <div role="presentation" className={`workspace-document-tab ${active ? 'is-active' : ''}`} key={workspaceTabKey(tab)}><button type="button" role="tab" aria-selected={Boolean(active)} title={title} onClick={() => activateWorkspaceTab(tab)}><Icon aria-hidden="true" /><span>{title}</span></button><button type="button" className="workspace-document-tab-close" aria-label={`Close ${title}`} title={`Close ${title}`} onClick={() => closeWorkspaceTab(tab)}><X aria-hidden="true" /></button></div>
+            })}</nav>}
+          </div>
           {!(view === 'canvas' && route.fileId) && <div className={`save-indicator is-${saveStatus}`} aria-live="polite">
             <span className="save-dot" aria-hidden="true" />
             {saveStatus === 'saved' ? 'Saved locally' : saveStatus === 'unsaved' ? 'Unsaved changes' : saveStatus === 'saving' ? 'Saving…' : 'Save failed'}
@@ -328,22 +416,23 @@ function App() {
 
         <section className={`workspace-content ${view === 'canvas' && route.fileId ? 'is-canvas-file-content' : ''} ${view === 'artifacts' && route.artifactId ? 'is-artifact-content' : ''}`} aria-label="Workspace content">
           {view === 'focus' ? <FocusWorkspace focus={focus} /> : view === 'settings' ? (
-            <WorkspaceSurface view={view} settingsSection={route.settingsSection} note={selectedNote} notes={workspace.data?.notes ?? []} folders={workspace.data?.folders ?? []} canvases={canvases.data ?? []} preferences={preferences.data ?? {}} fileId={route.fileId} artifactId={route.artifactId} onOpenArtifact={(artifactId) => navigate('artifacts', { artifactId })} onCloseArtifact={() => navigate('artifacts', {}, true)} onOpenCanvas={(fileId) => navigate('canvas', { fileId })} onBackToCanvases={() => navigate('canvas')} onSaveStatus={setSaveStatus} onDeleteNote={(noteId) => removeNoteMutation.mutate(noteId)} onCreateNote={() => createNoteMutation.mutate()} onOpenNote={(noteId) => navigate('notes', { noteId })} onOpenView={navigate} onOpenSettingsSection={(settingsSection) => navigate('settings', { settingsSection })} onStudyWithAgent={() => { setCoachPresentation('main'); setCoachOpen(true) }} />
+            <WorkspaceSurface view={view} settingsSection={route.settingsSection} note={selectedNote} notes={workspace.data?.notes ?? []} folders={workspace.data?.folders ?? []} canvases={canvases.data ?? []} preferences={preferences.data ?? {}} fileId={route.fileId} artifactId={route.artifactId} onOpenArtifact={(artifactId) => navigate('artifacts', { artifactId })} onCloseArtifact={() => navigate('artifacts', {}, true)} onOpenCanvas={openWorkspaceCanvas} onBackToCanvases={() => navigate('canvas')} onSaveStatus={setSaveStatus} onDeleteNote={(noteId) => removeNoteMutation.mutate(noteId)} onCreateNote={() => createNoteMutation.mutate()} onOpenNote={openWorkspaceNote} onOpenView={navigate} onOpenSettingsSection={(settingsSection) => navigate('settings', { settingsSection })} onStudyWithAgent={() => { setCoachPresentation('main'); setCoachOpen(true) }} />
           ) : view !== 'artifacts' && workspace.isLoading ? <LoadingState /> : view !== 'artifacts' && workspace.isError ? <ErrorState onRetry={() => workspace.refetch()} /> : (
-            <WorkspaceSurface view={view} settingsSection={route.settingsSection} note={selectedNote} notes={workspace.data?.notes ?? []} folders={workspace.data?.folders ?? []} canvases={canvases.data ?? []} preferences={preferences.data ?? {}} fileId={route.fileId} artifactId={route.artifactId} onOpenArtifact={(artifactId) => navigate('artifacts', { artifactId })} onCloseArtifact={() => navigate('artifacts', {}, true)} onOpenCanvas={(fileId) => navigate('canvas', { fileId })} onBackToCanvases={() => navigate('canvas')} onSaveStatus={setSaveStatus} onDeleteNote={(noteId) => removeNoteMutation.mutate(noteId)} onCreateNote={() => createNoteMutation.mutate()} onOpenNote={(noteId) => navigate('notes', { noteId })} onOpenView={navigate} onOpenSettingsSection={(settingsSection) => navigate('settings', { settingsSection })} onStudyWithAgent={() => { setCoachPresentation('main'); setCoachOpen(true) }} />
+            <WorkspaceSurface view={view} settingsSection={route.settingsSection} note={selectedNote} notes={workspace.data?.notes ?? []} folders={workspace.data?.folders ?? []} canvases={canvases.data ?? []} preferences={preferences.data ?? {}} fileId={route.fileId} artifactId={route.artifactId} onOpenArtifact={(artifactId) => navigate('artifacts', { artifactId })} onCloseArtifact={() => navigate('artifacts', {}, true)} onOpenCanvas={openWorkspaceCanvas} onBackToCanvases={() => navigate('canvas')} onSaveStatus={setSaveStatus} onDeleteNote={(noteId) => removeNoteMutation.mutate(noteId)} onCreateNote={() => createNoteMutation.mutate()} onOpenNote={(noteId) => openWorkspaceNote(noteId, view === 'canvas' && route.fileId ? { type: 'canvas', id: route.fileId } : view === 'artifacts' ? { type: 'artifacts' } : undefined)} onOpenView={navigate} onOpenSettingsSection={(settingsSection) => navigate('settings', { settingsSection })} onStudyWithAgent={() => { setCoachPresentation('main'); setCoachOpen(true) }} />
           )}
         </section>
       </main>
 
-      <aside className="coach-panel" aria-label="Coach Agent">
-        {isCoachOpen ? <CoachPanel presentation={coachPresentation} onMoveToSide={() => setCoachPresentation('side')} onMoveToMain={() => setCoachPresentation('main')} onNewChat={() => setCoachSessionRequest(null)} settings={preferences.data} note={view === 'notes' ? selectedNote : undefined} canvas={view === 'canvas' ? selectedCanvas : undefined} notes={workspace.data?.notes ?? []} openSessionId={coachSessionRequest?.sessionId} openSessionRequest={coachSessionRequest?.request} onOpenNote={(note) => { navigate('notes', { noteId: note.id, folderId: note.folderId ?? null }); setSaveStatus('saved'); setCoachPresentation('side') }} onOpenCanvas={(canvas) => { navigate('canvas', { fileId: canvas.id }); setCoachPresentation('side') }} onStartFocus={(action) => {
+      <aside className={`coach-panel ${isCoachOpen && coachPresentation === 'side' ? 'is-docked' : isCoachOpen ? 'is-main' : ''}`} aria-label="Coach Agent">
+        <CoachPanel isOpen={isCoachOpen} presentation={coachPresentation} onMoveToSide={() => setCoachPresentation('side')} onMoveToMain={() => setCoachPresentation('main')} onNewChat={() => setCoachSessionRequest(null)} onSessionChange={onCoachSessionChange} settings={preferences.data} note={view === 'notes' ? selectedNote : undefined} canvas={view === 'canvas' ? selectedCanvas : undefined} notes={workspace.data?.notes ?? []} openSessionId={coachSessionRequest?.sessionId} openSessionRequest={coachSessionRequest?.request} onOpenNote={(note) => { openWorkspaceNote(note.id); setCoachPresentation('side') }} onOpenCanvas={(canvas) => { openWorkspaceCanvas(canvas.id); setCoachPresentation('side') }} onStartFocus={(action) => {
           const started = focus.start(action.minutes, action.label)
           if (started) {
             if (action.theme) focus.setTheme(action.theme)
             navigate('focus')
           }
           return started
-        }} onClose={() => setCoachOpen(false)} /> : <button className="coach-trigger" type="button" aria-label="Open Coach Agent" title="Open Coach Agent" onClick={() => { setCoachPresentation('main'); setCoachOpen(true) }}>
+        }} onClose={() => setCoachOpen(false)} />
+        {!isCoachOpen && <button className="coach-trigger" type="button" aria-label="Open Coach Agent" title="Open Coach Agent" onClick={() => { setCoachPresentation('main'); setCoachOpen(true) }}>
           <Bot aria-hidden="true" />
           <span>Study Agent</span>
         </button>}
@@ -358,7 +447,7 @@ function App() {
           onQueryChange={setSearchQuery}
           onClose={closeSearch}
           onChooseNote={(noteId) => {
-            navigate('notes', { noteId })
+            openWorkspaceNote(noteId)
             closeSearch()
           }}
         />
@@ -369,7 +458,7 @@ function App() {
 
 function WorkspaceSurface({ view, settingsSection, note, notes, folders, canvases, preferences, fileId, artifactId, onOpenArtifact, onCloseArtifact, onOpenCanvas, onBackToCanvases, onSaveStatus, onDeleteNote, onCreateNote, onOpenNote, onOpenView, onOpenSettingsSection, onStudyWithAgent }: { view: WorkspaceView; settingsSection: import('./features/navigation/workspace-navigation').SettingsSection; note?: LumiNote; notes: LumiNote[]; folders: LumiFolder[]; canvases: import('./lib/lumi-api').LumiCanvas[]; preferences: LumiApplicationSettings; fileId: string | null; artifactId: string | null; onOpenArtifact: (id: string) => void; onCloseArtifact: () => void; onOpenCanvas: (id: string) => void; onBackToCanvases: () => void; onSaveStatus: (status: SaveStatus) => void; onDeleteNote: (noteId: string) => void; onCreateNote: () => void; onOpenNote: (id: string) => void; onOpenView: (view: WorkspaceView) => void; onOpenSettingsSection: (section: import('./features/navigation/workspace-navigation').SettingsSection) => void; onStudyWithAgent: () => void }) {
   if (view === 'home') return <HomeWorkspace notes={notes} folders={folders} canvases={canvases} recentLimit={Number(preferences.recentLimit ?? 12)} onOpenNote={onOpenNote} onOpenCanvas={onOpenCanvas} onCreateNote={onCreateNote} onOpenView={(target) => onOpenView(target)} onStudyWithAgent={onStudyWithAgent} />
-  if (view === 'artifacts') return <ArtifactsLibrary preferences={preferences} artifactId={artifactId} onOpenArtifact={onOpenArtifact} onOpenCanvas={onOpenCanvas} onCloseArtifact={onCloseArtifact} />
+  if (view === 'artifacts') return <ArtifactsLibrary preferences={preferences} artifactId={artifactId} notes={notes} onOpenArtifact={onOpenArtifact} onOpenCanvas={onOpenCanvas} onOpenNote={onOpenNote} onCloseArtifact={onCloseArtifact} />
   if (view === 'canvas') return <CanvasWorkspace notes={notes} selectedCanvasId={fileId} onOpenCanvas={onOpenCanvas} onBackToCanvases={onBackToCanvases} onOpenNote={onOpenNote} onCreateNote={onCreateNote} />
   if (view === 'graph') return <GraphWorkspace onOpenNote={onOpenNote} />
   if (view === 'settings') return <SettingsWorkspace activeTab={settingsSection} onTabChange={onOpenSettingsSection} />

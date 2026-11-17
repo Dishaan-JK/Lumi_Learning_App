@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
-import { getArtifacts, lumiQueryKeys, submitArtifactQuiz, type LumiApplicationSettings, type LumiArtifact, type LumiQuizResult } from '../../lib/lumi-api'
+import { getArtifacts, lumiQueryKeys, submitArtifactQuiz, type LumiApplicationSettings, type LumiArtifact, type LumiNote, type LumiQuizResult } from '../../lib/lumi-api'
 
 type Flashcard = { front: string; back: string }
 type QuizQuestion = { prompt: string; options: string[] }
@@ -18,7 +18,7 @@ function isQuiz(value: unknown): value is { type: 'quiz'; questions: QuizQuestio
   return isRecord(value) && value.type === 'quiz' && Array.isArray(value.questions) && value.questions.length > 0 && value.questions.every((question) => isRecord(question) && typeof question.prompt === 'string' && Array.isArray(question.options) && question.options.length > 0 && question.options.every((option) => typeof option === 'string'))
 }
 
-export function ArtifactsLibrary({ preferences, artifactId, onOpenArtifact, onOpenCanvas, onCloseArtifact }: { preferences: LumiApplicationSettings; artifactId: string | null; onOpenArtifact: (id: string) => void; onOpenCanvas: (id: string) => void; onCloseArtifact: () => void }) {
+export function ArtifactsLibrary({ preferences, artifactId, notes, onOpenArtifact, onOpenCanvas, onOpenNote, onCloseArtifact }: { preferences: LumiApplicationSettings; artifactId: string | null; notes: LumiNote[]; onOpenArtifact: (id: string) => void; onOpenCanvas: (id: string) => void; onOpenNote: (id: string) => void; onCloseArtifact: () => void }) {
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState('All')
   const artifacts = useQuery({ queryKey: lumiQueryKeys.artifacts, queryFn: getArtifacts })
@@ -41,12 +41,13 @@ export function ArtifactsLibrary({ preferences, artifactId, onOpenArtifact, onOp
       {!artifacts.isLoading && !artifacts.isError && <div className="artifact-filters" aria-label="Filter artifacts by type">{kinds.map((itemKind) => <button className={kind === itemKind ? 'is-active' : ''} type="button" key={itemKind} onClick={() => setKind(itemKind)}>{itemKind}<span>{itemKind === 'All' ? artifacts.data?.length ?? 0 : artifacts.data?.filter((item) => item.kind === itemKind).length ?? 0}</span></button>)}</div>}</>}
       {artifactId ? artifacts.isLoading ? <div className="artifact-loading" aria-live="polite"><span className="loading-orb" aria-hidden="true" /><p>Opening artifact…</p></div> : artifacts.isError ? (
         <section className="artifact-empty"><h2>This artifact could not be loaded.</h2><p>Check the local service, then return to your library.</p><button type="button" onClick={onCloseArtifact}>Back to artifacts</button></section>
-      ) : selectedArtifact ? <ArtifactDetail artifact={selectedArtifact} /> : <section className="artifact-empty"><h2>Artifact not found.</h2><p>It may have been removed from your library.</p><button type="button" onClick={onCloseArtifact}>Back to artifacts</button></section> : artifacts.isLoading ? <div className="artifact-loading" aria-live="polite"><span className="loading-orb" aria-hidden="true" /><p>Opening your library…</p></div> : artifacts.isError ? (
+      ) : selectedArtifact ? <ArtifactDetail artifact={selectedArtifact} sourceNote={notes.find((note) => note.id === selectedArtifact.sourceId)} onOpenNote={onOpenNote} /> : <section className="artifact-empty"><h2>Artifact not found.</h2><p>It may have been removed from your library.</p><button type="button" onClick={onCloseArtifact}>Back to artifacts</button></section> : artifacts.isLoading ? <div className="artifact-loading" aria-live="polite"><span className="loading-orb" aria-hidden="true" /><p>Opening your library…</p></div> : artifacts.isError ? (
         <section className="artifact-empty"><h2>Your library could not be loaded.</h2><p>Check the local service, then try again.</p><button type="button" onClick={() => artifacts.refetch()}>Try again</button></section>
       ) : visibleArtifacts.length ? (
         <div className={`artifact-grid ${preferences.artifactLayout === 'list' ? 'is-list' : ''}`} aria-label={`${visibleArtifacts.length} saved artifacts`}>{visibleArtifacts.map((artifact) => <ArtifactCard artifact={artifact} key={artifact.id} onSelect={() => {
           const kind = artifact.kind.toLowerCase().replace(/[^a-z]/g, '')
           if (kind === 'canvas' || kind === 'canvases') onOpenCanvas(artifact.sourceId)
+          else if ((kind === 'note' || kind === 'notes') && notes.some((note) => note.id === artifact.sourceId)) onOpenNote(artifact.sourceId)
           else onOpenArtifact(artifact.id)
         }} />)}</div>
       ) : <section className="artifact-empty"><h2>{normalizedQuery ? 'No artifacts match that search.' : 'Your library is ready.'}</h2><p>{normalizedQuery ? 'Try a different title, source, or phrase.' : 'Generated notes, lessons, quizzes, flashcards, and revision plans will appear here.'}</p></section>}
@@ -58,9 +59,9 @@ function ArtifactCard({ artifact, onSelect }: { artifact: LumiArtifact; onSelect
   return <button className="artifact-card" type="button" onClick={onSelect}><span className="artifact-kind">{artifact.kind}</span><strong>{artifact.title}</strong><span className="artifact-summary">{artifact.content.trim() || 'Open this saved learning object.'}</span><small>{artifact.source || 'Lumi workspace'} · {new Date(artifact.updatedAt).toLocaleDateString()}</small></button>
 }
 
-function ArtifactDetail({ artifact }: { artifact: LumiArtifact }) {
+function ArtifactDetail({ artifact, sourceNote, onOpenNote }: { artifact: LumiArtifact; sourceNote?: LumiNote; onOpenNote: (id: string) => void }) {
   const learningObject = artifact.learningObject
-  return <article className="artifact-detail is-workspace" aria-label={`Artifact: ${artifact.title}`}><p className="eyebrow">{artifact.kind}</p><h1>{artifact.title}</h1><p className="artifact-source">Source: {artifact.source || 'Lumi workspace'}</p>{isFlashcards(learningObject) ? <FlashcardPlayer cards={learningObject.cards} /> : isQuiz(learningObject) ? <QuizPlayer artifactId={artifact.id} questions={learningObject.questions} /> : <div className="artifact-content">{artifact.content}</div>}</article>
+  return <article className="artifact-detail is-workspace" aria-label={`Artifact: ${artifact.title}`}><p className="eyebrow">{artifact.kind}</p><h1>{artifact.title}</h1><p className="artifact-source">Source: {artifact.source || 'Lumi workspace'}</p>{sourceNote && <button className="artifact-edit-source" type="button" onClick={() => onOpenNote(sourceNote.id)}>Edit source note: {sourceNote.title || 'Untitled note'}</button>}{isFlashcards(learningObject) ? <FlashcardPlayer cards={learningObject.cards} /> : isQuiz(learningObject) ? <QuizPlayer artifactId={artifact.id} questions={learningObject.questions} /> : <div className="artifact-content">{artifact.content}</div>}</article>
 }
 
 function FlashcardPlayer({ cards }: { cards: Flashcard[] }) {

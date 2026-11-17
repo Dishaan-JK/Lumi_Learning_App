@@ -62,7 +62,12 @@ try {
   const generated = template.replace('__LUMI_ASSET_ENTRIES__', assetEntries)
   const generatedSource = join(temp, 'launcher.rs')
   await writeFile(generatedSource, generated)
-  await run('rustc', ['--edition=2021', '-C', 'opt-level=3', generatedSource, '-o', output], root, {
+  const rustArgs = ['--edition=2021', '-C', 'opt-level=3']
+  if (process.platform === 'win32') {
+    // Windows MSVC binaries otherwise require VCRUNTIME140.dll on the target PC.
+    rustArgs.push('-C', 'target-feature=+crt-static')
+  }
+  await run('rustc', [...rustArgs, generatedSource, '-o', output], root, {
     ...process.env,
     LUMI_BACKEND_BINARY: backendBinary,
     LUMI_DIST_DIR: join(root, 'dist'),

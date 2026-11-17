@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { lumiQueryKeys, updateNote, type LumiApplicationSettings, type LumiFolder, type LumiNote, type LumiWorkspace } from '../../lib/lumi-api'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { getCanvases, lumiQueryKeys, updateCanvas, updateNote, type LumiApplicationSettings, type LumiCanvas, type LumiFolder, type LumiNote, type LumiWorkspace } from '../../lib/lumi-api'
 import { uploadAttachment } from '../../lib/lumi-api'
-import { ImagePlus, Pencil, Eye } from 'lucide-react'
+import { ImagePlus, Pencil, Eye, PanelsTopLeft, X } from 'lucide-react'
 import { MarkdownPreview } from './MarkdownPreview'
 
 type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'error'
+type NoteDraft = { title: string; content: string; folderId: string }
+
+function readNoteDraft(note: LumiNote): NoteDraft | null {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(`lumi.note.draft:${note.id}`) ?? 'null')
+    if (!value || typeof value !== 'object') return null
+    const draft = value as Partial<NoteDraft>
+    if (typeof draft.title !== 'string' || typeof draft.content !== 'string' || typeof draft.folderId !== 'string') return null
+    return { title: draft.title, content: draft.content, folderId: draft.folderId }
+  } catch { return null }
+}
 
 interface NoteEditorProps {
   note: LumiNote
@@ -19,17 +30,35 @@ interface NoteEditorProps {
 
 export function NoteEditor({ note, notes, folders, preferences, onSaveStatus, onDelete, onOpenNote }: NoteEditorProps) {
   const queryClient = useQueryClient()
-  const [title, setTitle] = useState(note.title)
-  const [content, setContent] = useState(note.content)
-  const [folderId, setFolderId] = useState(note.folderId ?? '')
+  const [initialDraft] = useState(() => readNoteDraft(note))
+  const [title, setTitle] = useState(initialDraft?.title ?? note.title)
+  const [content, setContent] = useState(initialDraft?.content ?? note.content)
+  const [folderId, setFolderId] = useState(initialDraft?.folderId ?? note.folderId ?? '')
   const [previewOverride, setPreviewOverride] = useState<{ noteId: string; value: boolean } | null>(null)
   const [showSavedToast, setShowSavedToast] = useState(false)
+  const [showCanvasPicker, setShowCanvasPicker] = useState(false)
+  const [selectedCanvasIds, setSelectedCanvasIds] = useState<string[]>([])
   const isPreview = previewOverride?.noteId === note.id ? previewOverride.value : preferences.editorMode === 'preview'
-  const [isDirty, setDirty] = useState(false)
+  const [isDirty, setDirty] = useState(Boolean(initialDraft))
   const editorDelay = Number(preferences.autosaveDelay ?? 700)
   const imageInput = useRef<HTMLInputElement>(null)
   const bodyInput = useRef<HTMLTextAreaElement>(null)
   const savedToastTimer = useRef<number | null>(null)
+  const canvases = useQuery({ queryKey: lumiQueryKeys.canvases, queryFn: getCanvases })
+  const addToCanvases = useMutation({
+    mutationFn: async (canvasIds: string[]) => Promise.all(canvasIds.flatMap((canvasId) => {
+      const canvas = canvases.data?.find((item) => item.id === canvasId)
+      if (!canvas || canvas.noteIds.includes(note.id)) return []
+      const noteIds = [...canvas.noteIds, note.id]
+      const position = { x: 120 + ((noteIds.length - 1) % 3) * 390, y: 130 + Math.floor((noteIds.length - 1) / 3) * 270 }
+      return [updateCanvas(canvas.id, { noteIds, positions: { ...canvas.positions, [note.id]: position } })]
+    })),
+    onSuccess: (updatedCanvases) => {
+      queryClient.setQueryData<LumiCanvas[]>(lumiQueryKeys.canvases, (current) => current?.map((canvas) => updatedCanvases.find((updated) => updated.id === canvas.id) ?? canvas))
+      setShowCanvasPicker(false)
+    },
+    onSettled: () => { void queryClient.invalidateQueries({ queryKey: lumiQueryKeys.canvases }) },
+  })
   const { mutate: saveNote, isError, isPending: isSaving } = useMutation({
     mutationFn: ({ nextTitle, nextContent, nextFolderId }: { nextTitle: string; nextContent: string; nextFolderId: string }) => updateNote(note, nextTitle, nextContent, nextFolderId || undefined),
     onMutate: () => onSaveStatus('saving'),
@@ -43,6 +72,7 @@ export function NoteEditor({ note, notes, folders, preferences, onSaveStatus, on
       setContent(savedNote.content)
       setFolderId(savedNote.folderId ?? '')
       setDirty(false)
+      try { localStorage.removeItem(`lumi.note.draft:${note.id}`) } catch { /* The saved note remains available from the workspace. */ }
       onSaveStatus('saved')
       setShowSavedToast(true)
       if (savedToastTimer.current !== null) window.clearTimeout(savedToastTimer.current)
@@ -63,6 +93,11 @@ export function NoteEditor({ note, notes, folders, preferences, onSaveStatus, on
     const timeout = window.setTimeout(() => saveNote({ nextTitle: title, nextContent: content, nextFolderId: folderId }), editorDelay)
     return () => window.clearTimeout(timeout)
   }, [content, editorDelay, folderId, isDirty, isSaving, saveNote, title])
+
+  useEffect(() => {
+    if (!isDirty) return
+    try { localStorage.setItem(`lumi.note.draft:${note.id}`, JSON.stringify({ title, content, folderId })) } catch { /* Editing remains available if browser storage is full. */ }
+  }, [content, folderId, isDirty, note.id, title])
 
   useEffect(() => () => {
     if (savedToastTimer.current !== null) window.clearTimeout(savedToastTimer.current)
@@ -90,10 +125,17 @@ export function NoteEditor({ note, notes, folders, preferences, onSaveStatus, on
           <input ref={imageInput} className="sr-only" type="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-label="Choose note image" onChange={(event) => { const file = event.target.files?.[0]; if (file) imageUpload.mutate(file); event.target.value = '' }} />
           <button className="editor-tool-button" type="button" aria-label="Attach image" onClick={() => imageInput.current?.click()} disabled={imageUpload.isPending}><ImagePlus aria-hidden="true" />{imageUpload.isPending ? 'Uploading…' : 'Image'}</button>
           <button className="editor-tool-button" type="button" aria-label={isPreview ? 'Edit note' : 'Preview Markdown'} onClick={() => setPreviewOverride({ noteId: note.id, value: !isPreview })}>{isPreview ? <Pencil aria-hidden="true" /> : <Eye aria-hidden="true" />}{isPreview ? 'Edit' : 'Preview'}</button>
+          <button className="editor-tool-button" type="button" aria-expanded={showCanvasPicker} aria-controls="note-canvas-picker" onClick={() => { setSelectedCanvasIds(canvases.data?.filter((canvas) => canvas.noteIds.includes(note.id)).map((canvas) => canvas.id) ?? []); setShowCanvasPicker((value) => !value) }}><PanelsTopLeft aria-hidden="true" />Add to Canvas</button>
           <button className="editor-delete-button" type="button" onClick={() => { if (window.confirm(`Delete “${title || 'Untitled note'}”?`)) onDelete() }}>Delete note</button>
           <button className="editor-save-button" type="button" onClick={saveNow} disabled={!isDirty || isSaving}>{isSaving ? 'Saving…' : 'Save now'}</button>
         </div>
       </div>
+      {showCanvasPicker && <section className="note-canvas-picker" id="note-canvas-picker" aria-label="Add note to canvases">
+        <header><div><strong>Add to Canvas</strong><span>Choose one or more boards for “{title || 'Untitled note'}”.</span></div><button type="button" aria-label="Close Canvas picker" onClick={() => setShowCanvasPicker(false)}><X aria-hidden="true" /></button></header>
+        {canvases.isLoading ? <p>Loading canvases…</p> : canvases.isError ? <p role="alert">Could not load your canvases. Try again in a moment.</p> : canvases.data?.length ? <fieldset>{canvases.data.map((canvas) => <label key={canvas.id}><input type="checkbox" checked={selectedCanvasIds.includes(canvas.id)} onChange={(event) => setSelectedCanvasIds((ids) => event.target.checked ? [...ids, canvas.id] : ids.filter((id) => id !== canvas.id))} /><span>{canvas.title}</span>{canvas.noteIds.includes(note.id) && <small>Already added</small>}</label>)}</fieldset> : <p>No canvases yet. Create a Canvas first, then add this note here.</p>}
+        {addToCanvases.isError && <p role="alert">Could not add the note to every selected Canvas. Please try again.</p>}
+        {canvases.data?.length ? <footer><button type="button" onClick={() => setShowCanvasPicker(false)}>Cancel</button><button type="button" className="editor-save-button" disabled={addToCanvases.isPending || selectedCanvasIds.length === 0} onClick={() => addToCanvases.mutate(selectedCanvasIds)}>{addToCanvases.isPending ? 'Adding…' : `Add to ${selectedCanvasIds.length || ''} Canvas${selectedCanvasIds.length === 1 ? '' : 'es'}`}</button></footer> : null}
+      </section>}
       <label className="sr-only" htmlFor="note-title">Note title</label>
       <input id="note-title" className="note-title-input" value={title} onChange={(event) => updateDraft(() => setTitle(event.target.value))} />
       <label className="sr-only" htmlFor="note-content">Note body</label>
